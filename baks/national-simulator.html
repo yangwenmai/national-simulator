@@ -1,0 +1,3920 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>国家对战模拟器</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #f0f0f0;
+            color: #333;
+        }
+        
+        #game-container {
+            margin-top: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 1200px;
+        }
+        
+        #main-content {
+            display: flex;
+            width: 100%;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        #left-panel {
+            width: 25%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #center-panel {
+            flex: 1;
+        }
+        
+        #right-panel {
+            width: 25%;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        #bottom-panel {
+            width: 100%;
+        }
+        
+        #gameCanvas {
+            border: 3px solid #333;
+            border-radius: 4px;
+            background-color: #e5e5e5;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            width: 100%;
+            height: auto;
+        }
+        
+        .control-panel {
+            background-color: #fff;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 15px;
+            overflow: hidden;
+        }
+        
+        .panel-title {
+            background-color: #3498db;
+            color: white;
+            padding: 8px 12px;
+            margin: 0;
+            font-size: 16px;
+        }
+        
+        .panel-content {
+            border: 1px solid #ddd;
+            border-top: none;
+            padding: 12px;
+            background-color: #f9f9f9;
+        }
+        
+        /* Tabs */
+        .tabs {
+            display: flex;
+            background: #f1f1f1;
+            border-bottom: 1px solid #ddd;
+        }
+        
+        .tab {
+            padding: 10px 15px;
+            cursor: pointer;
+            border: none;
+            background-color: transparent;
+            font-weight: bold;
+            flex: 1;
+            text-align: center;
+        }
+        
+        .tab.active {
+            background-color: #3498db;
+            color: white;
+            border-bottom: 2px solid #3498db;
+        }
+        
+        .tab-content {
+            display: none;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-top: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px 0;
+            transition: all 0.2s;
+            width: 100%;
+        }
+        
+        button:hover:not(:disabled) {
+            background-color: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            color: #666666;
+            cursor: not-allowed;
+        }
+        
+        #action-buttons button {
+            margin-top: 8px;
+        }
+        
+        .building-btn {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            text-align: left;
+            padding: 8px 12px;
+            margin-bottom: 6px;
+            background-color: #2196F3;
+        }
+        
+        .building-btn:hover:not(:disabled) {
+            background-color: #0b7dda;
+        }
+        
+        .building-cost {
+            font-weight: bold;
+            padding: 2px 6px;
+            background-color: rgba(255,255,255,0.2);
+            border-radius: 10px;
+            font-size: 12px;
+        }
+        
+        .player-card {
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        .player-card.active {
+            border: 2px solid gold;
+            box-shadow: 0 0 10px gold;
+        }
+        
+        .player-resources {
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .resource {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .resource-icon {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-weight: bold;
+        }
+        
+        .game-notification {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0,0,0,0.8);
+            color: white;
+            padding: 15px 30px;
+            border-radius: 5px;
+            z-index: 100;
+            transition: all 0.3s;
+            opacity: 0;
+            pointer-events: none;
+            text-align: center;
+        }
+        
+        .game-notification.show {
+            opacity: 1;
+        }
+        
+        .building-progress {
+            width: 100%;
+            height: 10px;
+            background-color: #ddd;
+            border-radius: 5px;
+            margin-top: 5px;
+            overflow: hidden;
+        }
+        
+        .building-progress-bar {
+            height: 100%;
+            background-color: #4CAF50;
+            width: 0%;
+            transition: width 0.5s;
+        }
+        
+        .building-preview {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f5f5f5;
+        }
+        
+        .turn-indicator {
+            background-color: #34495e;
+            color: white;
+            padding: 8px 15px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            text-align: center;
+            font-weight: bold;
+            width: 100%;
+        }
+        
+        #game-log {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 8px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        
+        .log-entry {
+            margin-bottom: 4px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        @keyframes highlight {
+            0% { background-color: rgba(255, 215, 0, 0.3); }
+            100% { background-color: transparent; }
+        }
+        
+        .highlight {
+            animation: highlight 2s ease-out;
+        }
+        
+        /* 军事单位样式 */
+        .military-button {
+            background-color: #e74c3c;
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            text-align: left;
+            padding: 8px 12px;
+        }
+        
+        .military-button:hover:not(:disabled) {
+            background-color: #c0392b;
+        }
+        
+        .unit-preview {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f5f5f5;
+        }
+        
+        .military-action-btn {
+            background-color: #e74c3c;
+            margin-bottom: 6px;
+        }
+        
+        .military-action-btn:hover:not(:disabled) {
+            background-color: #c0392b;
+        }
+        
+        #selection-info {
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+    <h1>国家对战模拟器</h1>
+    
+    <div id="game-container">
+        <div class="turn-indicator" id="turn-display"></div>
+        
+        <div id="main-content">
+            <!-- Left panel: Building & Military tabs -->
+            <div id="left-panel">
+                <div class="control-panel">
+                    <div class="tabs">
+                        <button class="tab active" onclick="openTab('building-tab')">建造</button>
+                        <button class="tab" onclick="openTab('military-tab')">军事</button>
+                    </div>
+                    
+                    <div id="building-tab" class="tab-content active">
+                        <div id="building-options"></div>
+                        <div id="building-preview" class="building-preview" style="display: none;">
+                            <div>
+                                <strong id="preview-name"></strong>
+                                <p id="preview-desc" style="font-size: 12px;"></p>
+                            </div>
+                            <div id="preview-cost"></div>
+                        </div>
+                    </div>
+                    
+                    <div id="military-tab" class="tab-content">
+                        <div id="military-options"></div>
+                        <div id="unit-preview" class="unit-preview" style="display: none;">
+                            <div>
+                                <strong id="unit-preview-name"></strong>
+                                <p id="unit-preview-desc" style="font-size: 12px;"></p>
+                            </div>
+                            <div id="unit-preview-cost"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Center panel: Game Canvas -->
+            <div id="center-panel">
+                <canvas id="gameCanvas" width="800" height="600"></canvas>
+            </div>
+            
+            <!-- Right panel: Action buttons and Player stats -->
+            <div id="right-panel">
+                <div class="control-panel">
+                    <h3 class="panel-title">行动</h3>
+                    <div class="panel-content" id="action-buttons">
+                        <button id="end-turn-btn">结束回合</button>
+                        <button id="cancel-action-btn" style="display: none;">取消当前操作</button>
+                        <button id="new-game-btn">新游戏</button>
+                    </div>
+                </div>
+                
+                <div class="control-panel" id="military-actions-panel" style="display: none;">
+                    <h3 class="panel-title">军事行动</h3>
+                    <div class="panel-content">
+                        <button id="attack-btn" class="military-action-btn">攻击</button>
+                        <button id="move-btn" class="military-action-btn">移动</button>
+                    </div>
+                </div>
+                
+                <div class="control-panel">
+                    <h3 class="panel-title">玩家信息</h3>
+                    <div class="panel-content" id="player-stats"></div>
+                </div>
+                
+                <div class="control-panel" id="selection-info" style="display: none;">
+                    <h3 class="panel-title">选中的格子</h3>
+                    <div class="panel-content" id="tile-info"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Bottom panel: Game log -->
+        <div id="bottom-panel" class="control-panel">
+            <h3 class="panel-title">游戏日志</h3>
+            <div class="panel-content">
+                <div id="game-log"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="game-notification" id="notification"></div>
+
+    <script>
+        // Tab功能
+        function openTab(tabName) {
+            // 隐藏所有标签内容
+            const tabContents = document.getElementsByClassName('tab-content');
+            for (let i = 0; i < tabContents.length; i++) {
+                tabContents[i].className = tabContents[i].className.replace(' active', '');
+            }
+            
+            // 移除所有标签的活动状态
+            const tabs = document.getElementsByClassName('tab');
+            for (let i = 0; i < tabs.length; i++) {
+                tabs[i].className = tabs[i].className.replace(' active', '');
+            }
+            
+            // 显示当前标签并设置为活动状态
+            document.getElementById(tabName).className += ' active';
+            const activeTab = document.querySelector(`.tab[onclick="openTab('${tabName}')"]`);
+            if (activeTab) {
+                activeTab.className += ' active';
+            }
+        }
+        
+        // 游戏常量
+        const GRID_SIZE = 40;
+        const GRID_WIDTH = 20;
+        const GRID_HEIGHT = 15;
+        const MAX_PLAYERS = 5;
+        const PLAYER_COLORS = [
+            { main: '#e74c3c', border: '#c0392b', light: 'rgba(231, 76, 60, 0.3)' },
+            { main: '#3498db', border: '#2980b9', light: 'rgba(52, 152, 219, 0.3)' },
+            { main: '#2ecc71', border: '#27ae60', light: 'rgba(46, 204, 113, 0.3)' },
+            { main: '#f39c12', border: '#d35400', light: 'rgba(243, 156, 18, 0.3)' },
+            { main: '#9b59b6', border: '#8e44ad', light: 'rgba(155, 89, 182, 0.3)' }
+        ];
+        
+        // 军事单位类型
+        const UNITS = {
+            'infantry': {
+                name: '步兵',
+                cost: 50,
+                maintenance: 5,
+                health: 100,
+                attack: 10,
+                defense: 15,
+                moveRange: 1,
+                attackRange: 1,
+                desc: '基础军事单位，攻击和防御能力均衡。'
+            },
+            'artillery': {
+                name: '炮兵',
+                cost: 100,
+                maintenance: 10,
+                health: 80,
+                attack: 25,
+                defense: 5,
+                moveRange: 1,
+                attackRange: 2,
+                desc: '远程攻击单位，攻击力强但防御较弱。'
+            },
+            'cavalry': {
+                name: '骑兵',
+                cost: 75,
+                maintenance: 8,
+                health: 90,
+                attack: 15,
+                defense: 10,
+                moveRange: 2,
+                attackRange: 2,
+                desc: '机动性强的单位，可以快速移动。'
+            },
+            'tank': {
+                name: '坦克',
+                cost: 200,
+                maintenance: 15,
+                health: 150,
+                attack: 30,
+                defense: 25,
+                moveRange: 2,
+                attackRange: 3,
+                desc: '重型军事单位，攻击和防御能力都很强。'
+            }
+        };
+        
+        // 建筑类型和价格
+        const BUILDINGS = {
+            capital: { 
+                name: '首都', 
+                income: 50, 
+                cost: 0, 
+                maxHealth: 350, // 降低首都生命值
+                description: '每个玩家自动拥有一个首都，提供50金币/回合的收入。'
+            },
+            city: { 
+                name: '城市', 
+                income: 30, 
+                cost: 500, 
+                maxHealth: 200,
+                description: '城市可以扩展领土范围，并提供30金币/回合的收入。'
+            },
+            goldMine: { 
+                name: '金矿', 
+                income: 100, 
+                cost: 1000, 
+                maxHealth: 150, // 降低生命值
+                description: '金矿提供100金币/回合的高额收入。'
+            },
+            silverMine: { 
+                name: '银矿', 
+                income: 50, 
+                cost: 500, 
+                maxHealth: 120, // 降低生命值
+                description: '银矿提供50金币/回合的中等收入。'
+            },
+            ironMine: { 
+                name: '铁矿', 
+                income: 25, 
+                cost: 250, 
+                maxHealth: 100, // 降低生命值
+                description: '铁矿提供25金币/回合的低额收入。'
+            },
+            forest: { 
+                name: '森林', 
+                income: 10, 
+                cost: 100, 
+                maxHealth: 80, // 降低生命值
+                description: '森林提供10金币/回合的少量收入。'
+            },
+            pharmacy: { 
+                name: '药店', 
+                income: 5, 
+                cost: 15, 
+                maxHealth: 60, // 降低生命值
+                description: '药店提供5金币/回合的微量收入。'
+            },
+            medicineFactory: { 
+                name: '药厂', 
+                income: 15, 
+                cost: 200, 
+                maxHealth: 100, // 降低生命值
+                description: '药厂提供15金币/回合的收入。'
+            },
+            armoryFactory: { 
+                name: '军厂', 
+                income: -5, 
+                cost: 75, 
+                maxHealth: 120, // 降低生命值
+                description: '军厂每2回合可生产1个免维护费的步兵，每轮最多生产3个。维护费为5金币/回合。'
+            },
+            bigArmoryFactory: { 
+                name: '大军厂', 
+                income: -10, 
+                cost: 150, 
+                maxHealth: 150, // 降低生命值
+                description: '大军厂每4回合可生产1个需要维护费的步兵，没有生产数量限制。维护费为10金币/回合。'
+            },
+            militaryAcademy: { 
+                name: '军校', 
+                income: -20, 
+                cost: 200, 
+                maxHealth: 130, // 降低生命值
+                description: '军校可以训练和升级军队。维护费为20金币/回合。'
+            },
+            barracks: { 
+                name: '军营', 
+                income: -10, 
+                cost: 100, 
+                maxHealth: 120, // 降低生命值
+                description: '军营每2回合可生产1个免维护费的骑兵，每轮最多生产2个。维护费为10金币/回合。'
+            },
+            repairShop: { 
+                name: '修理厂', 
+                income: -15, 
+                cost: 200, 
+                maxHealth: 100, // 新建筑
+                description: '修理厂可以修复受损的建筑。维护费为15金币/回合。'
+            },
+            hospital: { 
+                name: '医院', 
+                income: -10, 
+                cost: 100, 
+                maxHealth: 90, 
+                description: '医院每回合可以治疗1个军事单位，恢复20点生命值。维护费为10金币/回合。'
+            },
+            bigHospital: { 
+                name: '大医院', 
+                income: -20, 
+                cost: 200, 
+                maxHealth: 130, 
+                description: '大医院每回合可以治疗3个军事单位，每个恢复20点生命值。维护费为20金币/回合。'
+            }
+        };
+        
+        // 游戏状态
+        let gameState = {
+            players: [],
+            currentPlayerIndex: 0,
+            map: [],
+            round: 1,
+            selectedTile: null,
+            buildingMode: false,
+            selectedBuildingType: null,
+            buildingInProgress: null,
+            gameLog: [],
+            // 军事相关状态
+            militaryMode: false,
+            recruitMode: false,
+            selectedUnitType: null,
+            attackMode: false,
+            moveMode: false,
+            selectedUnit: null,
+            // 军工厂生产相关
+            factoryProduction: {
+                armoryFactoryLimit: 4,         // 每轮最多建造4个军厂
+                bigArmoryFactoryLimit: 3,      // 每轮最多建造3个大军厂
+                infantryProductionLimit: 3,    // 军厂每轮最多生产3个步兵
+                barracksLimit: 3,              // 每轮最多建造3个军营
+                cavalryProductionLimit: 2,     // 军营每轮最多生产2个骑兵
+                armoryFactoryBuiltThisRound: 0,
+                bigArmoryFactoryBuiltThisRound: 0,
+                barracksBuiltThisRound: 0,
+                infantryProducedThisRound: 0,
+                cavalryProducedThisRound: 0,
+                productionQueues: []  // 生产队列 {buildingId, type, progress, targetX, targetY}
+            },
+            // 领土控制系统
+            territoryControlMax: 10, // 最大领土控制值
+            territoryControlLossPerTurn: 1 // 敌方单位每回合降低的控制值
+        };
+        
+        // 获取HTML元素
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const endTurnBtn = document.getElementById('end-turn-btn');
+        const cancelActionBtn = document.getElementById('cancel-action-btn');
+        const newGameBtn = document.getElementById('new-game-btn');
+        const turnDisplay = document.getElementById('turn-display');
+        const buildingOptions = document.getElementById('building-options');
+        const buildingPreview = document.getElementById('building-preview');
+        const previewName = document.getElementById('preview-name');
+        const previewDesc = document.getElementById('preview-desc');
+        const previewCost = document.getElementById('preview-cost');
+        const playerStats = document.getElementById('player-stats');
+        const selectionInfo = document.getElementById('selection-info');
+        const tileInfo = document.getElementById('tile-info');
+        const gameLog = document.getElementById('game-log');
+        const notification = document.getElementById('notification');
+        
+        // 初始化游戏
+        function initGame(playerCount) {
+            // 创建玩家
+            gameState.players = [];
+            for (let i = 0; i < playerCount; i++) {
+                gameState.players.push({
+                    id: i,
+                    name: `玩家 ${i + 1}`,
+                    color: PLAYER_COLORS[i],
+                    gold: 200,
+                    buildings: [],
+                    income: 0,
+                    militaryMaintenance: 0, // 军事维护费
+                    units: [] // 玩家拥有的军事单位
+                });
+            }
+            
+            // 初始化地图
+            gameState.map = [];
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    gameState.map.push({
+                        x: x,
+                        y: y,
+                        ownerId: null,
+                        building: null,
+                        unit: null,  // 格子上的军事单位
+                        terrain: 'plain',
+                        territoryControl: gameState.territoryControlMax // 初始领土控制值
+                    });
+                }
+            }
+            
+            // 为每个玩家添加首都
+            gameState.players.forEach((player, index) => {
+                // 均匀分布首都
+                let x, y;
+                if (playerCount <= 2) {
+                    // 两个玩家时，将首都放在左右两侧
+                    x = index === 0 ? 3 : GRID_WIDTH - 4;
+                    y = Math.floor(GRID_HEIGHT / 2);
+                } else {
+                    // 多个玩家时，环绕中心放置
+                    const angle = (2 * Math.PI * index) / playerCount;
+                    const radius = Math.min(GRID_WIDTH, GRID_HEIGHT) / 3;
+                    x = Math.floor(GRID_WIDTH / 2 + radius * Math.cos(angle));
+                    y = Math.floor(GRID_HEIGHT / 2 + radius * Math.sin(angle));
+                }
+                
+                const tileIndex = y * GRID_WIDTH + x;
+                
+                gameState.map[tileIndex].ownerId = player.id;
+                gameState.map[tileIndex].building = {
+                    type: 'capital',
+                    name: '首都',
+                    health: 350,
+                    income: 50,
+                    id: generateBuildingId()
+                };
+                
+                // 将首都周围区域归属给玩家
+                for (let dy = -2; dy <= 2; dy++) {
+                    for (let dx = -2; dx <= 2; dx++) {
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        if (nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT) {
+                            const neighborIndex = ny * GRID_WIDTH + nx;
+                            gameState.map[neighborIndex].ownerId = player.id;
+                            gameState.map[neighborIndex].territoryControl = gameState.territoryControlMax; // 设置控制值
+                        }
+                    }
+                }
+            });
+            
+            // 添加一些随机地形
+            addRandomTerrain();
+            
+            // 重置游戏状态
+            gameState.currentPlayerIndex = 0;
+            gameState.round = 1;
+            gameState.selectedTile = null;
+            gameState.buildingMode = false;
+            gameState.selectedBuildingType = null;
+            gameState.buildingInProgress = null;
+            gameState.gameLog = [];
+            gameState.militaryMode = false;
+            gameState.recruitMode = false;
+            gameState.selectedUnitType = null;
+            gameState.attackMode = false;
+            gameState.moveMode = false;
+            gameState.selectedUnit = null;
+            
+            // 重置工厂生产相关状态
+            gameState.factoryProduction = {
+                armoryFactoryLimit: 4,
+                bigArmoryFactoryLimit: 3,
+                infantryProductionLimit: 3,
+                barracksLimit: 3,
+                cavalryProductionLimit: 2,
+                armoryFactoryBuiltThisRound: 0,
+                bigArmoryFactoryBuiltThisRound: 0,
+                barracksBuiltThisRound: 0,
+                infantryProducedThisRound: 0,
+                cavalryProducedThisRound: 0,
+                productionQueues: []
+            };
+            
+            // 重置UI状态
+            document.getElementById('military-actions-panel').style.display = 'none';
+            document.getElementById('selection-info').style.display = 'none';
+            
+            // 添加游戏开始日志
+            addLogEntry(`游戏开始！${playerCount}个国家进入竞争。`);
+            addLogEntry(`每个国家起始资金：200金币，拥有1座首都。`);
+            
+            // 计算初始收入
+            calculateIncome();
+            
+            // 更新UI
+            updateUI();
+            // 绘制地图
+            drawMap();
+            
+            // 显示游戏开始通知
+            showNotification("游戏开始！");
+        }
+        
+        // 添加随机地形
+        function addRandomTerrain() {
+            // 添加一些森林
+            for (let i = 0; i < 20; i++) {
+                const x = Math.floor(Math.random() * GRID_WIDTH);
+                const y = Math.floor(Math.random() * GRID_HEIGHT);
+                const tileIndex = y * GRID_WIDTH + x;
+                
+                // 只在空白区域添加
+                if (gameState.map[tileIndex].ownerId === null && gameState.map[tileIndex].terrain === 'plain') {
+                    gameState.map[tileIndex].terrain = 'forest';
+                }
+            }
+            
+            // 添加一些山脉
+            for (let i = 0; i < 15; i++) {
+                const x = Math.floor(Math.random() * GRID_WIDTH);
+                const y = Math.floor(Math.random() * GRID_HEIGHT);
+                const tileIndex = y * GRID_WIDTH + x;
+                
+                // 只在空白区域添加
+                if (gameState.map[tileIndex].ownerId === null && gameState.map[tileIndex].terrain === 'plain') {
+                    gameState.map[tileIndex].terrain = 'mountain';
+                }
+            }
+            
+            // 添加一些水域
+            for (let i = 0; i < 10; i++) {
+                const x = Math.floor(Math.random() * GRID_WIDTH);
+                const y = Math.floor(Math.random() * GRID_HEIGHT);
+                const tileIndex = y * GRID_WIDTH + x;
+                
+                // 只在空白区域添加
+                if (gameState.map[tileIndex].ownerId === null && gameState.map[tileIndex].terrain === 'plain') {
+                    gameState.map[tileIndex].terrain = 'water';
+                }
+            }
+        }
+        
+        // 绘制地图
+        function drawMap() {
+            // 清空画布
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // 绘制网格和地形
+            for (let i = 0; i < gameState.map.length; i++) {
+                const tile = gameState.map[i];
+                const x = tile.x * GRID_SIZE;
+                const y = tile.y * GRID_SIZE;
+                
+                // 绘制地形底色
+                switch(tile.terrain) {
+                    case 'plain':
+                        ctx.fillStyle = '#f8f8f8';
+                        break;
+                    case 'forest':
+                        ctx.fillStyle = '#c8e6c9';
+                        break;
+                    case 'mountain':
+                        ctx.fillStyle = '#d7ccc8';
+                        break;
+                    case 'water':
+                        ctx.fillStyle = '#bbdefb';
+                        break;
+                    default:
+                        ctx.fillStyle = '#f8f8f8';
+                }
+                
+                // 绘制格子背景
+                ctx.fillRect(x, y, GRID_SIZE, GRID_SIZE);
+                
+                // 绘制玩家领地颜色
+                if (tile.ownerId !== null) {
+                    ctx.fillStyle = gameState.players[tile.ownerId].color.light;
+                    ctx.fillRect(x, y, GRID_SIZE, GRID_SIZE);
+                }
+            }
+            
+            // 绘制国家边界
+            drawBorders();
+            
+            // 绘制格子内容（建筑、单位等）
+            for (let i = 0; i < gameState.map.length; i++) {
+                const tile = gameState.map[i];
+                const x = tile.x * GRID_SIZE;
+                const y = tile.y * GRID_SIZE;
+                
+                // 绘制建筑
+                if (tile.building) {
+                    // 如果建筑没有健康值，初始化一个默认值
+                    if (tile.building.health === undefined) {
+                        if (tile.building.type === 'capital') {
+                            tile.building.health = 350; // 首都有350生命值
+                        } else if (BUILDINGS[tile.building.type]) {
+                            tile.building.health = BUILDINGS[tile.building.type].maxHealth;
+                        } else {
+                            tile.building.health = 200; // 默认健康值
+                        }
+                    }
+                    drawBuilding(tile, x, y);
+                }
+                
+                // 绘制军事单位
+                if (tile.unit) {
+                    drawUnit(tile, x, y);
+                }
+                
+                // 绘制选中的格子高亮
+                if (gameState.selectedTile && tile.x === gameState.selectedTile.x && tile.y === gameState.selectedTile.y) {
+                    ctx.strokeStyle = '#ffeb3b';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(x + 2, y + 2, GRID_SIZE - 4, GRID_SIZE - 4);
+                    ctx.lineWidth = 1;
+                }
+                
+                // 绘制建造中的效果
+                if (gameState.buildingInProgress && gameState.buildingInProgress.x === tile.x && gameState.buildingInProgress.y === tile.y) {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+                    ctx.fillRect(x, y, GRID_SIZE, GRID_SIZE);
+                    
+                    // 绘制建造进度
+                    const progress = gameState.buildingInProgress.progress;
+                    ctx.fillStyle = '#4CAF50';
+                    ctx.fillRect(x + 5, y + GRID_SIZE - 10, (GRID_SIZE - 10) * (progress / 100), 5);
+                    ctx.strokeStyle = '#333';
+                    ctx.strokeRect(x + 5, y + GRID_SIZE - 10, GRID_SIZE - 10, 5);
+                }
+                
+                // 绘制移动范围
+                if (gameState.moveMode && gameState.selectedUnit) {
+                    const moveRange = UNITS[gameState.selectedUnit.type].moveRange;
+                    const srcX = gameState.selectedUnit.x;
+                    const srcY = gameState.selectedUnit.y;
+                    
+                    // 计算曼哈顿距离
+                    const distance = Math.abs(tile.x - srcX) + Math.abs(tile.y - srcY);
+                    
+                    if (distance <= moveRange && distance > 0) {
+                        ctx.fillStyle = 'rgba(52, 152, 219, 0.3)';
+                        ctx.fillRect(x, y, GRID_SIZE, GRID_SIZE);
+                    }
+                }
+                
+                // 绘制攻击范围
+                if (gameState.attackMode && gameState.selectedUnit) {
+                    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+                    const unitType = gameState.selectedUnit.type;
+                    const attackRange = UNITS[unitType].attackRange;
+                    const srcX = gameState.selectedUnit.x;
+                    const srcY = gameState.selectedUnit.y;
+                    
+                    // 计算曼哈顿距离
+                    const distance = Math.abs(tile.x - srcX) + Math.abs(tile.y - srcY);
+                    
+                    // 在攻击范围内高亮显示
+                    if (distance <= attackRange && distance > 0) {
+                        ctx.fillStyle = 'rgba(231, 76, 60, 0.3)';
+                        ctx.fillRect(x, y, GRID_SIZE, GRID_SIZE);
+                        
+                        // 敌方单位或建筑高亮显示
+                        const srcTileIndex = srcY * GRID_WIDTH + srcX;
+                        const srcTile = gameState.map[srcTileIndex];
+                        const attackerOwnerId = srcTile.unit.ownerId !== undefined ? srcTile.unit.ownerId : srcTile.ownerId;
+                        
+                        if ((tile.unit && tile.unit.ownerId !== attackerOwnerId) || 
+                            (!tile.unit && tile.building && tile.ownerId !== attackerOwnerId)) {
+                            ctx.fillStyle = 'rgba(231, 76, 60, 0.6)';
+                            ctx.fillRect(x, y, GRID_SIZE, GRID_SIZE);
+                        }
+                    }
+                }
+            }
+            
+            // 绘制网格线
+            ctx.strokeStyle = '#ddd';
+            ctx.lineWidth = 1;
+            
+            for (let x = 0; x <= GRID_WIDTH; x++) {
+                ctx.beginPath();
+                ctx.moveTo(x * GRID_SIZE, 0);
+                ctx.lineTo(x * GRID_SIZE, GRID_HEIGHT * GRID_SIZE);
+                ctx.stroke();
+            }
+            
+            for (let y = 0; y <= GRID_HEIGHT; y++) {
+                ctx.beginPath();
+                ctx.moveTo(0, y * GRID_SIZE);
+                ctx.lineTo(GRID_WIDTH * GRID_SIZE, y * GRID_SIZE);
+                ctx.stroke();
+            }
+        }
+        
+        // 绘制国家边界
+        function drawBorders() {
+            // 遍历每个格子
+            for (let y = 0; y < GRID_HEIGHT; y++) {
+                for (let x = 0; x < GRID_WIDTH; x++) {
+                    const tileIndex = y * GRID_WIDTH + x;
+                    const tile = gameState.map[tileIndex];
+                    
+                    // 只处理有所有者的格子
+                    if (tile.ownerId !== null) {
+                        const tileX = x * GRID_SIZE;
+                        const tileY = y * GRID_SIZE;
+                        
+                        // 检查四个方向的相邻格子
+                        const directions = [
+                            { dx: -1, dy: 0, side: 'left' },
+                            { dx: 1, dy: 0, side: 'right' },
+                            { dx: 0, dy: -1, side: 'top' },
+                            { dx: 0, dy: 1, side: 'bottom' }
+                        ];
+                        
+                        directions.forEach(dir => {
+                            const nx = x + dir.dx;
+                            const ny = y + dir.dy;
+                            
+                            // 检查是否在地图边界内
+                            if (nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT) {
+                                const neighborIndex = ny * GRID_WIDTH + nx;
+                                const neighbor = gameState.map[neighborIndex];
+                                
+                                // 如果相邻格子属于不同玩家或无所有者，绘制边界
+                                if (neighbor.ownerId !== tile.ownerId) {
+                                    ctx.beginPath();
+                                    ctx.lineWidth = 3;
+                                    ctx.strokeStyle = gameState.players[tile.ownerId].color.border;
+                                    
+                                    switch(dir.side) {
+                                        case 'left':
+                                            ctx.moveTo(tileX, tileY);
+                                            ctx.lineTo(tileX, tileY + GRID_SIZE);
+                                            break;
+                                        case 'right':
+                                            ctx.moveTo(tileX + GRID_SIZE, tileY);
+                                            ctx.lineTo(tileX + GRID_SIZE, tileY + GRID_SIZE);
+                                            break;
+                                        case 'top':
+                                            ctx.moveTo(tileX, tileY);
+                                            ctx.lineTo(tileX + GRID_SIZE, tileY);
+                                            break;
+                                        case 'bottom':
+                                            ctx.moveTo(tileX, tileY + GRID_SIZE);
+                                            ctx.lineTo(tileX + GRID_SIZE, tileY + GRID_SIZE);
+                                            break;
+                                    }
+                                    
+                                    ctx.stroke();
+                                }
+                            } else {
+                                // 如果在地图边缘，也绘制边界
+                                ctx.beginPath();
+                                ctx.lineWidth = 3;
+                                ctx.strokeStyle = gameState.players[tile.ownerId].color.border;
+                                
+                                switch(dir.side) {
+                                    case 'left':
+                                        ctx.moveTo(tileX, tileY);
+                                        ctx.lineTo(tileX, tileY + GRID_SIZE);
+                                        break;
+                                    case 'right':
+                                        ctx.moveTo(tileX + GRID_SIZE, tileY);
+                                        ctx.lineTo(tileX + GRID_SIZE, tileY + GRID_SIZE);
+                                        break;
+                                    case 'top':
+                                        ctx.moveTo(tileX, tileY);
+                                        ctx.lineTo(tileX + GRID_SIZE, tileY);
+                                        break;
+                                    case 'bottom':
+                                        ctx.moveTo(tileX, tileY + GRID_SIZE);
+                                        ctx.lineTo(tileX + GRID_SIZE, tileY + GRID_SIZE);
+                                        break;
+                                }
+                                
+                                ctx.stroke();
+                            }
+                        });
+                    }
+                }
+            }
+        }
+        
+        // 绘制建筑
+        function drawBuilding(tile, x, y) {
+            const buildingType = tile.building.type;
+            const playerColor = tile.ownerId !== null ? gameState.players[tile.ownerId].color.main : '#888';
+            
+            // 不同建筑使用不同颜色和形状
+            switch(buildingType) {
+                case 'capital':
+                    // 首都: 星形
+                    ctx.fillStyle = '#FFD700';
+                    ctx.beginPath();
+                    const center = { x: x + GRID_SIZE/2, y: y + GRID_SIZE/2 };
+                    const spikes = 5;
+                    const outerRadius = GRID_SIZE/2 - 8;
+                    const innerRadius = GRID_SIZE/4;
+                    
+                    for(let i = 0; i < spikes * 2; i++) {
+                        const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                        const angle = Math.PI / spikes * i - Math.PI / 2;
+                        const pointX = center.x + Math.cos(angle) * radius;
+                        const pointY = center.y + Math.sin(angle) * radius;
+                        
+                        if(i === 0) {
+                            ctx.moveTo(pointX, pointY);
+                        } else {
+                            ctx.lineTo(pointX, pointY);
+                        }
+                    }
+                    
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 添加轮廓
+                    ctx.strokeStyle = '#b58e00';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                    break;
+                    
+                case 'city':
+                    // 城市: 多个建筑物
+                    // 主要建筑
+                    ctx.fillStyle = '#95a5a6';
+                    ctx.fillRect(x + 5, y + 10, GRID_SIZE - 10, GRID_SIZE - 20);
+                    
+                    // 高楼
+                    ctx.fillStyle = '#7f8c8d';
+                    ctx.fillRect(x + 12, y + 5, 8, GRID_SIZE - 15);
+                    ctx.fillRect(x + GRID_SIZE - 20, y + 8, 10, GRID_SIZE - 18);
+                    
+                    // 小建筑
+                    ctx.fillStyle = '#bdc3c7';
+                    ctx.fillRect(x + 8, y + GRID_SIZE - 15, 10, 7);
+                    ctx.fillRect(x + GRID_SIZE - 18, y + GRID_SIZE - 18, 8, 10);
+                    
+                    // 窗户
+                    ctx.fillStyle = '#ecf0f1';
+                    for(let i = 0; i < 3; i++) {
+                        for(let j = 0; j < 2; j++) {
+                            ctx.fillRect(x + 15 + i*7, y + 15 + j*8, 3, 3);
+                        }
+                    }
+                    break;
+                    
+                case 'bigArmoryFactory':
+                    // 大军厂: 大型工厂
+                    ctx.fillStyle = '#c0392b';
+                    ctx.fillRect(x + 5, y + 10, GRID_SIZE - 10, GRID_SIZE - 20);
+                    
+                    // 屋顶
+                    ctx.beginPath();
+                    ctx.moveTo(x + 5, y + 10);
+                    ctx.lineTo(x + GRID_SIZE/2, y + 5);
+                    ctx.lineTo(x + GRID_SIZE - 5, y + 10);
+                    ctx.fill();
+                    
+                    // 烟囱
+                    ctx.fillStyle = '#7f8c8d';
+                    ctx.fillRect(x + 10, y + 2, 6, 13);
+                    ctx.fillRect(x + GRID_SIZE - 16, y + 2, 6, 13);
+                    
+                    // 烟雾
+                    ctx.fillStyle = 'rgba(200, 200, 200, 0.7)';
+                    ctx.beginPath();
+                    ctx.arc(x + 13, y + 2, 4, 0, Math.PI * 2);
+                    ctx.arc(x + 10, y - 2, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE - 13, y + 2, 4, 0, Math.PI * 2);
+                    ctx.arc(x + GRID_SIZE - 10, y - 2, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    break;
+                    
+                case 'armoryFactory':
+                    // 军厂: 小型工厂
+                    ctx.fillStyle = '#e67e22';
+                    ctx.fillRect(x + 8, y + 15, GRID_SIZE - 16, GRID_SIZE - 25);
+                    
+                    // 屋顶
+                    ctx.beginPath();
+                    ctx.moveTo(x + 8, y + 15);
+                    ctx.lineTo(x + GRID_SIZE/2, y + 10);
+                    ctx.lineTo(x + GRID_SIZE - 8, y + 15);
+                    ctx.fill();
+                    
+                    // 烟囱
+                    ctx.fillStyle = '#7f8c8d';
+                    ctx.fillRect(x + 15, y + 8, 5, 10);
+                    
+                    // 烟雾
+                    ctx.fillStyle = 'rgba(200, 200, 200, 0.7)';
+                    ctx.beginPath();
+                    ctx.arc(x + 17, y + 8, 3, 0, Math.PI * 2);
+                    ctx.arc(x + 15, y + 5, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    break;
+                    
+                case 'militaryAcademy':
+                    // 军校: 学校建筑
+                    ctx.fillStyle = '#34495e';
+                    ctx.fillRect(x + 5, y + 12, GRID_SIZE - 10, GRID_SIZE - 22);
+                    
+                    // 屋顶
+                    ctx.beginPath();
+                    ctx.moveTo(x + 5, y + 12);
+                    ctx.lineTo(x + GRID_SIZE/2, y + 5);
+                    ctx.lineTo(x + GRID_SIZE - 5, y + 12);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 轮廓
+                    ctx.strokeStyle = '#2c3e50';
+                    ctx.lineWidth = 1;
+                    ctx.stroke();
+                    
+                    // 旗帜
+                    ctx.fillStyle = '#7f8c8d';
+                    ctx.fillRect(x + GRID_SIZE/2, y + 2, 1, 8);
+                    
+                    ctx.fillStyle = playerColor;
+                    ctx.beginPath();
+                    ctx.moveTo(x + GRID_SIZE/2 + 1, y + 2);
+                    ctx.lineTo(x + GRID_SIZE/2 + 6, y + 4);
+                    ctx.lineTo(x + GRID_SIZE/2 + 1, y + 6);
+                    ctx.closePath();
+                    ctx.fill();
+                    break;
+                    
+                case 'drugFactory':
+                    // 药厂: 医疗建筑
+                    ctx.fillStyle = '#3498db';
+                    ctx.fillRect(x + 8, y + 12, GRID_SIZE - 16, GRID_SIZE - 22);
+                    
+                    // 屋顶
+                    ctx.fillStyle = '#2980b9';
+                    ctx.beginPath();
+                    ctx.moveTo(x + 8, y + 12);
+                    ctx.lineTo(x + GRID_SIZE/2, y + 7);
+                    ctx.lineTo(x + GRID_SIZE - 8, y + 12);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 医疗标志
+                    ctx.fillStyle = '#ecf0f1';
+                    ctx.fillRect(x + GRID_SIZE/2 - 5, y + 18, 10, 3);
+                    ctx.fillRect(x + GRID_SIZE/2 - 2, y + 15, 4, 9);
+                    break;
+                    
+                case 'forest':
+                    // 森林: 树丛
+                    for(let i = 0; i < 3; i++) {
+                        const treeX = x + 8 + i * 10;
+                        const treeY = y + 10 + (i % 2) * 5;
+                        
+                        // 树冠
+                        ctx.fillStyle = '#27ae60';
+                        ctx.beginPath();
+                        ctx.moveTo(treeX, treeY + 20);
+                        ctx.lineTo(treeX - 8, treeY + 10);
+                        ctx.lineTo(treeX - 5, treeY + 10);
+                        ctx.lineTo(treeX - 10, treeY);
+                        ctx.lineTo(treeX - 4, treeY);
+                        ctx.lineTo(treeX, treeY - 5);
+                        ctx.lineTo(treeX + 4, treeY);
+                        ctx.lineTo(treeX + 10, treeY);
+                        ctx.lineTo(treeX + 5, treeY + 10);
+                        ctx.lineTo(treeX + 8, treeY + 10);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        // 树干
+                        ctx.fillStyle = '#795548';
+                        ctx.fillRect(treeX - 1, treeY + 15, 2, 10);
+                    }
+                    break;
+                    
+                case 'pharmacy':
+                    // 药店: 小型医疗建筑
+                    ctx.fillStyle = '#2ecc71';
+                    ctx.fillRect(x + 10, y + 15, GRID_SIZE - 20, GRID_SIZE - 25);
+                    
+                    // 屋顶
+                    ctx.fillStyle = '#27ae60';
+                    ctx.beginPath();
+                    ctx.moveTo(x + 10, y + 15);
+                    ctx.lineTo(x + GRID_SIZE/2, y + 10);
+                    ctx.lineTo(x + GRID_SIZE - 10, y + 15);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 医疗标志
+                    ctx.fillStyle = '#ecf0f1';
+                    ctx.fillRect(x + GRID_SIZE/2 - 3, y + 18, 6, 2);
+                    ctx.fillRect(x + GRID_SIZE/2 - 1, y + 16, 2, 6);
+                    break;
+                    
+                case 'goldMine':
+                    // 金矿: 矿洞和金色
+                    // 矿洞
+                    ctx.fillStyle = '#7f8c8d';
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE/2, y + GRID_SIZE/2, GRID_SIZE/3, 0, Math.PI, true);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 金色
+                    ctx.fillStyle = '#f1c40f';
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE/2, y + GRID_SIZE/2 + 5, GRID_SIZE/6, 0, 2 * Math.PI);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 矿车轨道
+                    ctx.strokeStyle = '#7f8c8d';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(x + GRID_SIZE/2, y + GRID_SIZE/2);
+                    ctx.lineTo(x + GRID_SIZE/2, y + GRID_SIZE - 5);
+                    ctx.stroke();
+                    
+                    // 矿车
+                    ctx.fillStyle = '#95a5a6';
+                    ctx.fillRect(x + GRID_SIZE/2 - 5, y + GRID_SIZE - 10, 10, 5);
+                    break;
+                    
+                case 'silverMine':
+                    // 银矿: 矿洞和银色
+                    // 矿洞
+                    ctx.fillStyle = '#7f8c8d';
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE/2, y + GRID_SIZE/2, GRID_SIZE/3, 0, Math.PI, true);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 银色
+                    ctx.fillStyle = '#bdc3c7';
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE/2, y + GRID_SIZE/2 + 5, GRID_SIZE/6, 0, 2 * Math.PI);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 矿车轨道
+                    ctx.strokeStyle = '#7f8c8d';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(x + GRID_SIZE/2, y + GRID_SIZE/2);
+                    ctx.lineTo(x + GRID_SIZE/2, y + GRID_SIZE - 5);
+                    ctx.stroke();
+                    
+                    // 矿车
+                    ctx.fillStyle = '#95a5a6';
+                    ctx.fillRect(x + GRID_SIZE/2 - 5, y + GRID_SIZE - 10, 10, 5);
+                    break;
+                    
+                case 'ironMine':
+                    // 铁矿: 矿洞和铁色
+                    // 矿洞
+                    ctx.fillStyle = '#7f8c8d';
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE/2, y + GRID_SIZE/2, GRID_SIZE/3, 0, Math.PI, true);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 铁色
+                    ctx.fillStyle = '#95a5a6';
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE/2, y + GRID_SIZE/2 + 5, GRID_SIZE/6, 0, 2 * Math.PI);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 矿车轨道
+                    ctx.strokeStyle = '#7f8c8d';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(x + GRID_SIZE/2, y + GRID_SIZE/2);
+                    ctx.lineTo(x + GRID_SIZE/2, y + GRID_SIZE - 5);
+                    ctx.stroke();
+                    
+                    // 矿车
+                    ctx.fillStyle = '#95a5a6';
+                    ctx.fillRect(x + GRID_SIZE/2 - 5, y + GRID_SIZE - 10, 10, 5);
+                    break;
+                    
+                case 'militaryCamp':
+                    // 军营: 帐篷营地
+                    // 主帐篷
+                    ctx.fillStyle = '#8e44ad';
+                    ctx.beginPath();
+                    ctx.moveTo(x + GRID_SIZE/2, y + 10);
+                    ctx.lineTo(x + 10, y + 30);
+                    ctx.lineTo(x + GRID_SIZE - 10, y + 30);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 小帐篷1
+                    ctx.fillStyle = '#9b59b6';
+                    ctx.beginPath();
+                    ctx.moveTo(x + 15, y + 15);
+                    ctx.lineTo(x + 5, y + 28);
+                    ctx.lineTo(x + 25, y + 28);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 小帐篷2
+                    ctx.beginPath();
+                    ctx.moveTo(x + GRID_SIZE - 15, y + 15);
+                    ctx.lineTo(x + GRID_SIZE - 25, y + 28);
+                    ctx.lineTo(x + GRID_SIZE - 5, y + 28);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 旗帜
+                    ctx.fillStyle = '#7f8c8d';
+                    ctx.fillRect(x + GRID_SIZE/2 - 1, y + 5, 2, 10);
+                    
+                    ctx.fillStyle = playerColor;
+                    ctx.beginPath();
+                    ctx.moveTo(x + GRID_SIZE/2 + 1, y + 5);
+                    ctx.lineTo(x + GRID_SIZE/2 + 7, y + 7);
+                    ctx.lineTo(x + GRID_SIZE/2 + 1, y + 9);
+                    ctx.closePath();
+                    ctx.fill();
+                    break;
+                
+                case 'pharmacy':
+                    // 药店: 小型医疗建筑
+                    ctx.fillStyle = '#2ecc71';
+                    ctx.fillRect(x + 10, y + 15, GRID_SIZE - 20, GRID_SIZE - 25);
+                    
+                    // 屋顶
+                    ctx.fillStyle = '#27ae60';
+                    ctx.beginPath();
+                    ctx.moveTo(x + 10, y + 15);
+                    ctx.lineTo(x + GRID_SIZE/2, y + 10);
+                    ctx.lineTo(x + GRID_SIZE - 10, y + 15);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 医疗标志
+                    ctx.fillStyle = '#ecf0f1';
+                    ctx.fillRect(x + GRID_SIZE/2 - 3, y + 18, 6, 2);
+                    ctx.fillRect(x + GRID_SIZE/2 - 1, y + 16, 2, 6);
+                    break;
+                    
+                case 'hospital':
+                    // 医院: 中型医疗建筑
+                    ctx.fillStyle = '#3498db';
+                    ctx.fillRect(x + 7, y + 10, GRID_SIZE - 14, GRID_SIZE - 18);
+                    
+                    // 屋顶
+                    ctx.fillStyle = '#2980b9';
+                    ctx.beginPath();
+                    ctx.moveTo(x + 7, y + 10);
+                    ctx.lineTo(x + GRID_SIZE/2, y + 5);
+                    ctx.lineTo(x + GRID_SIZE - 7, y + 10);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // 医疗标志
+                    ctx.fillStyle = '#ecf0f1';
+                    ctx.fillRect(x + GRID_SIZE/2 - 6, y + 16, 12, 4);
+                    ctx.fillRect(x + GRID_SIZE/2 - 2, y + 12, 4, 12);
+                    
+                    // 窗户
+                    ctx.fillStyle = '#d5f0ff';
+                    ctx.fillRect(x + 12, y + 18, 5, 5);
+                    ctx.fillRect(x + GRID_SIZE - 17, y + 18, 5, 5);
+                    break;
+                    
+                case 'bigHospital':
+                    // 大医院: 大型医疗综合体
+                    ctx.fillStyle = '#3498db';
+                    ctx.fillRect(x + 5, y + 8, GRID_SIZE - 10, GRID_SIZE - 16);
+                    
+                    // 添加高层部分
+                    ctx.fillStyle = '#2980b9';
+                    ctx.fillRect(x + 10, y + 4, GRID_SIZE - 20, 10);
+                    
+                    // 医疗标志
+                    ctx.fillStyle = '#ecf0f1';
+                    ctx.fillRect(x + GRID_SIZE/2 - 8, y + 16, 16, 5);
+                    ctx.fillRect(x + GRID_SIZE/2 - 3, y + 11, 6, 15);
+                    
+                    // 窗户
+                    ctx.fillStyle = '#d5f0ff';
+                    for(let i = 0; i < 3; i++) {
+                        for(let j = 0; j < 2; j++) {
+                            ctx.fillRect(x + 10 + i*10, y + 18 + j*8, 4, 4);
+                        }
+                    }
+                    
+                    // 屋顶医疗直升机停机坪
+                    ctx.fillStyle = '#7f8c8d';
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE/2, y + 8, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.strokeStyle = '#ecf0f1';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(x + GRID_SIZE/2 - 4, y + 8);
+                    ctx.lineTo(x + GRID_SIZE/2 + 4, y + 8);
+                    ctx.moveTo(x + GRID_SIZE/2, y + 4);
+                    ctx.lineTo(x + GRID_SIZE/2, y + 12);
+                    ctx.stroke();
+                    break;
+                
+                default:
+                    // 默认建筑
+                    ctx.fillStyle = '#95a5a6';
+                    ctx.fillRect(x + 10, y + 10, GRID_SIZE - 20, GRID_SIZE - 20);
+            }
+            
+            // 绘制建筑名称
+            ctx.fillStyle = '#000';
+            ctx.font = '8px Arial';
+            ctx.textAlign = 'center';
+            if (tile.building.name) {
+                const buildingName = tile.building.name.length > 8 ? 
+                    tile.building.name.substring(0, 7) + '...' : 
+                    tile.building.name;
+                ctx.fillText(buildingName, x + GRID_SIZE/2, y + GRID_SIZE - 3);
+            } else if (BUILDINGS[buildingType]) {
+                const buildingName = BUILDINGS[buildingType].name.length > 8 ? 
+                    BUILDINGS[buildingType].name.substring(0, 7) + '...' : 
+                    BUILDINGS[buildingType].name;
+                ctx.fillText(buildingName, x + GRID_SIZE/2, y + GRID_SIZE - 3);
+            }
+            
+            // 绘制健康条
+            if (tile.building.health !== undefined) {
+                const maxHealth = buildingType === 'capital' ? BUILDINGS.capital.maxHealth : (BUILDINGS[buildingType] ? BUILDINGS[buildingType].maxHealth : 200);
+                const healthPercent = tile.building.health / maxHealth;
+                const barWidth = GRID_SIZE - 10;
+                const barHeight = 3;
+                
+                // 健康条背景
+                ctx.fillStyle = '#333333';
+                ctx.fillRect(x + 5, y + 3, barWidth, barHeight);
+                
+                // 健康条
+                if (healthPercent > 0.6) {
+                    ctx.fillStyle = '#00CC00'; // 绿色 - 健康
+                } else if (healthPercent > 0.3) {
+                    ctx.fillStyle = '#FFCC00'; // 黄色 - 警告
+                } else {
+                    ctx.fillStyle = '#CC0000'; // 红色 - 危险
+                }
+                ctx.fillRect(x + 5, y + 3, barWidth * healthPercent, barHeight);
+            }
+        }
+        
+        // 绘制军事单位
+        function drawUnit(tile, x, y) {
+            if (!tile.unit) return;
+            
+            const unitType = tile.unit.type;
+            const playerColor = tile.ownerId !== null ? gameState.players[tile.ownerId].color.main : '#888';
+            
+            // 不同单位使用不同的图形
+            switch(unitType) {
+                case 'infantry':
+                    // 步兵: 人形
+                    ctx.fillStyle = playerColor;
+                    // 头部
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE/2, y + GRID_SIZE/2 - 8, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    // 身体
+                    ctx.fillRect(x + GRID_SIZE/2 - 3, y + GRID_SIZE/2 - 3, 6, 12);
+                    // 武器
+                    ctx.fillStyle = '#555';
+                    ctx.fillRect(x + GRID_SIZE/2 + 3, y + GRID_SIZE/2 - 3, 10, 2);
+                    break;
+                    
+                case 'artillery':
+                    // 炮兵: 炮台
+                    ctx.fillStyle = playerColor;
+                    // 炮身
+                    ctx.fillRect(x + GRID_SIZE/2 - 8, y + GRID_SIZE/2 - 3, 16, 10);
+                    // 炮管
+                    ctx.fillStyle = '#555';
+                    ctx.fillRect(x + GRID_SIZE/2 - 2, y + GRID_SIZE/2 - 15, 4, 15);
+                    // 轮子
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE/2 - 6, y + GRID_SIZE/2 + 7, 3, 0, Math.PI * 2);
+                    ctx.arc(x + GRID_SIZE/2 + 6, y + GRID_SIZE/2 + 7, 3, 0, Math.PI * 2);
+                    ctx.fillStyle = '#333';
+                    ctx.fill();
+                    break;
+                    
+                case 'cavalry':
+                    // 骑兵: 马和骑手
+                    // 马身
+                    ctx.fillStyle = '#8B4513';
+                    ctx.fillRect(x + GRID_SIZE/2 - 9, y + GRID_SIZE/2 - 3, 18, 10);
+                    // 马头
+                    ctx.beginPath();
+                    ctx.moveTo(x + GRID_SIZE/2 + 9, y + GRID_SIZE/2 - 3);
+                    ctx.lineTo(x + GRID_SIZE/2 + 15, y + GRID_SIZE/2 - 8);
+                    ctx.lineTo(x + GRID_SIZE/2 + 9, y + GRID_SIZE/2 + 2);
+                    ctx.closePath();
+                    ctx.fill();
+                    // 马腿
+                    ctx.fillRect(x + GRID_SIZE/2 - 7, y + GRID_SIZE/2 + 7, 2, 5);
+                    ctx.fillRect(x + GRID_SIZE/2 - 2, y + GRID_SIZE/2 + 7, 2, 5);
+                    ctx.fillRect(x + GRID_SIZE/2 + 3, y + GRID_SIZE/2 + 7, 2, 5);
+                    ctx.fillRect(x + GRID_SIZE/2 + 8, y + GRID_SIZE/2 + 7, 2, 5);
+                    // 骑手
+                    ctx.fillStyle = playerColor;
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE/2, y + GRID_SIZE/2 - 8, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillRect(x + GRID_SIZE/2 - 2, y + GRID_SIZE/2 - 4, 4, 8);
+                    break;
+                    
+                case 'tank':
+                    // 坦克
+                    // 坦克身体
+                    ctx.fillStyle = playerColor;
+                    ctx.fillRect(x + GRID_SIZE/2 - 10, y + GRID_SIZE/2 - 5, 20, 12);
+                    // 坦克炮塔
+                    ctx.fillStyle = '#444';
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE/2, y + GRID_SIZE/2 - 2, 6, 0, Math.PI * 2);
+                    ctx.fill();
+                    // 坦克炮管
+                    ctx.fillRect(x + GRID_SIZE/2, y + GRID_SIZE/2 - 3, 12, 2);
+                    // 坦克履带
+                    ctx.fillStyle = '#333';
+                    ctx.fillRect(x + GRID_SIZE/2 - 12, y + GRID_SIZE/2 + 7, 24, 3);
+                    break;
+                
+                default:
+                    // 默认单位形状
+                    ctx.fillStyle = playerColor;
+                    ctx.beginPath();
+                    ctx.arc(x + GRID_SIZE/2, y + GRID_SIZE/2, 10, 0, Math.PI * 2);
+                    ctx.fill();
+            }
+            
+            // 绘制单位血量
+            const healthPercent = tile.unit.health / UNITS[unitType].health;
+            const healthBarWidth = GRID_SIZE - 10;
+            
+            // 背景
+            ctx.fillStyle = '#555';
+            ctx.fillRect(x + 5, y + GRID_SIZE - 8, healthBarWidth, 3);
+            
+            // 血量
+            ctx.fillStyle = healthPercent > 0.5 ? '#4CAF50' : (healthPercent > 0.25 ? '#FF9800' : '#F44336');
+            ctx.fillRect(x + 5, y + GRID_SIZE - 8, healthBarWidth * healthPercent, 3);
+        }
+        
+        // 更新UI
+        function updateUI() {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            // 更新回合显示
+            turnDisplay.innerHTML = `回合: ${gameState.round} - <span style="color: ${currentPlayer.color.main}">${currentPlayer.name}</span> 的回合`;
+            
+            // 更新玩家信息
+            updatePlayerStats();
+            
+            // 更新建筑按钮
+            updateBuildingOptions();
+            
+            // 更新军事选项
+            updateMilitaryOptions();
+            
+            // 更新选中格子信息
+            updateSelectionInfo();
+            
+            // 根据当前模式更新按钮状态
+            if (gameState.buildingMode) {
+                cancelActionBtn.style.display = 'block';
+                cancelActionBtn.textContent = '取消建造';
+            } else if (gameState.recruitMode) {
+                cancelActionBtn.style.display = 'block';
+                cancelActionBtn.textContent = '取消招募';
+            } else if (gameState.attackMode || gameState.moveMode) {
+                cancelActionBtn.style.display = 'block';
+                cancelActionBtn.textContent = '取消行动';
+            } else if (gameState.buildingInProgress) {
+                cancelActionBtn.style.display = 'block';
+                cancelActionBtn.textContent = '取消建造中的建筑';
+            } else {
+                cancelActionBtn.style.display = 'none';
+            }
+        }
+        
+        // 更新玩家状态信息
+        function updatePlayerStats() {
+            playerStats.innerHTML = '';
+            
+            gameState.players.forEach((player, index) => {
+                const playerCard = document.createElement('div');
+                playerCard.className = 'player-card';
+                
+                // 如果是当前玩家，添加高亮
+                if (index === gameState.currentPlayerIndex) {
+                    playerCard.classList.add('active');
+                }
+                
+                playerCard.style.borderLeft = `5px solid ${player.color.main}`;
+                playerCard.style.backgroundColor = player.color.light;
+                
+                const buildingsCount = countPlayerBuildings(player.id);
+                const unitsCount = player.units.length;
+                const totalIncome = player.income - player.militaryMaintenance;
+                
+                playerCard.innerHTML = `
+                    <div>
+                        <strong>${player.name}</strong>
+                    </div>
+                    <div class="player-resources">
+                        <div class="resource">
+                            <div class="resource-icon" style="background-color: gold;">$</div>
+                            <span>${player.gold}</span>
+                        </div>
+                        <div class="resource">
+                            <div class="resource-icon" style="background-color: #4CAF50;">+</div>
+                            <span>${totalIncome}/回合</span>
+                        </div>
+                        <div class="resource">
+                            <div class="resource-icon" style="background-color: #3498db;">B</div>
+                            <span>${buildingsCount}</span>
+                        </div>
+                        <div class="resource">
+                            <div class="resource-icon" style="background-color: #e74c3c;">U</div>
+                            <span>${unitsCount}</span>
+                        </div>
+                    </div>
+                `;
+                
+                playerStats.appendChild(playerCard);
+            });
+        }
+        
+        // 更新建筑选项
+        function updateBuildingOptions() {
+            buildingOptions.innerHTML = '';
+            
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            Object.entries(BUILDINGS).forEach(([type, building]) => {
+                // 排除首都作为建造选项
+                if (type === 'capital') {
+                    return;
+                }
+                
+                const button = document.createElement('button');
+                button.className = 'building-btn';
+                button.innerHTML = `
+                    <span>${building.name}</span>
+                    <span class="building-cost">${building.cost} 金币</span>
+                `;
+                button.disabled = building.cost > currentPlayer.gold;
+                
+                button.addEventListener('click', () => {
+                    selectBuildingType(type);
+                });
+                
+                // 显示建筑信息预览
+                button.addEventListener('mouseover', () => {
+                    showBuildingPreview(type);
+                });
+                
+                button.addEventListener('mouseout', () => {
+                    if (gameState.selectedBuildingType !== type) {
+                        buildingPreview.style.display = 'none';
+                    }
+                });
+                
+                buildingOptions.appendChild(button);
+            });
+        }
+        
+        // 选择建筑类型
+        function selectBuildingType(type) {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            // 检查是否达到本轮军厂或大军厂的建造限制
+            if (type === 'armoryFactory' && 
+                gameState.factoryProduction.armoryFactoryBuiltThisRound >= gameState.factoryProduction.armoryFactoryLimit) {
+                showNotification(`本轮军厂建造已达上限(${gameState.factoryProduction.armoryFactoryLimit}个)！`, "error");
+                return;
+            }
+            
+            if (type === 'bigArmoryFactory' && 
+                gameState.factoryProduction.bigArmoryFactoryBuiltThisRound >= gameState.factoryProduction.bigArmoryFactoryLimit) {
+                showNotification(`本轮大军厂建造已达上限(${gameState.factoryProduction.bigArmoryFactoryLimit}个)！`, "error");
+                return;
+            }
+            
+            // 检查是否达到本轮军营的建造限制
+            if (type === 'barracks' && 
+                gameState.factoryProduction.barracksBuiltThisRound >= gameState.factoryProduction.barracksLimit) {
+                showNotification(`本轮军营建造已达上限(${gameState.factoryProduction.barracksLimit}个)！`, "error");
+                return;
+            }
+            
+            // 设置建筑模式
+            gameState.buildingMode = true;
+            gameState.selectedBuildingType = type;
+            
+            // 切换到建造标签
+            openTab('building-tab');
+            
+            // 显示建筑预览
+            showBuildingPreview(type);
+            
+            // 更新取消按钮
+            cancelActionBtn.style.display = 'block';
+            cancelActionBtn.textContent = '取消建造';
+            
+            // 显示通知
+            showNotification(`选择要建造的位置放置${BUILDINGS[type].name}`);
+        }
+        
+        // 显示建筑预览
+        function showBuildingPreview(type) {
+            document.getElementById('building-preview').style.display = 'flex';
+            document.getElementById('preview-name').textContent = BUILDINGS[type].name;
+            document.getElementById('preview-desc').textContent = BUILDINGS[type].desc;
+            const previewCost = document.getElementById('preview-cost');
+            previewCost.textContent = `花费: ${BUILDINGS[type].cost} 金币`;
+            
+            if (BUILDINGS[type].income >= 0) {
+                previewCost.innerHTML += `<br>收入: +${BUILDINGS[type].income}/回合`;
+            } else {
+                previewCost.innerHTML += `<br>维护费: ${BUILDINGS[type].income}/回合`;
+            }
+        }
+        
+        // 更新军事单位选项
+        function updateMilitaryOptions() {
+            const militaryOptions = document.getElementById('militaryOptions') || document.getElementById('military-options');
+            militaryOptions.innerHTML = '';
+            
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            Object.entries(UNITS).forEach(([type, unit]) => {
+                const button = document.createElement('button');
+                button.className = 'military-button';
+                button.innerHTML = `
+                    <span>${unit.name}</span>
+                    <span class="building-cost">${unit.cost} 金币</span>
+                `;
+                button.disabled = unit.cost > currentPlayer.gold;
+                
+                button.addEventListener('click', () => {
+                    selectUnitType(type);
+                });
+                
+                // 显示单位信息预览
+                button.addEventListener('mouseover', () => {
+                    showUnitPreview(type);
+                });
+                
+                button.addEventListener('mouseout', () => {
+                    if (gameState.selectedUnitType !== type) {
+                        document.getElementById('unit-preview').style.display = 'none';
+                    }
+                });
+                
+                militaryOptions.appendChild(button);
+            });
+        }
+        
+        // 显示单位预览
+        function showUnitPreview(type) {
+            const unitPreview = document.getElementById('unit-preview');
+            const previewName = document.getElementById('unit-preview-name');
+            const previewDesc = document.getElementById('unit-preview-desc');
+            const previewCost = document.getElementById('unit-preview-cost');
+            
+            unitPreview.style.display = 'flex';
+            previewName.textContent = UNITS[type].name;
+            previewDesc.textContent = UNITS[type].desc;
+            previewCost.innerHTML = `
+                花费: ${UNITS[type].cost} 金币<br>
+                维护费: ${UNITS[type].maintenance}/回合<br>
+                攻击力: ${UNITS[type].attack}<br>
+                防御力: ${UNITS[type].defense}<br>
+                移动范围: ${UNITS[type].moveRange}<br>
+                攻击范围: ${UNITS[type].attackRange}
+            `;
+        }
+        
+        // 选择要招募的单位类型
+        function selectUnitType(type) {
+            gameState.recruitMode = true;
+            gameState.selectedUnitType = type;
+            
+            // 切换到军事标签
+            openTab('military-tab');
+            
+            // 更新取消按钮
+            cancelActionBtn.style.display = 'block';
+            cancelActionBtn.textContent = '取消招募';
+            
+            // 显示招募预览
+            showUnitPreview(type);
+            
+            // 显示通知
+            showNotification(`选择放置${UNITS[type].name}的位置`);
+        }
+        
+        // 招募军事单位
+        function recruitUnit(x, y, unitType) {
+            const tileIndex = y * GRID_WIDTH + x;
+            const tile = gameState.map[tileIndex];
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            if (tile.unit) {
+                showNotification("此位置已有单位！", "error");
+                return false;
+            }
+            
+            const unitCost = UNITS[unitType].cost;
+            
+            // 检查是否有足够的金币
+            if (currentPlayer.gold < unitCost) {
+                showNotification("金币不足！", "error");
+                return false;
+            }
+            
+            // 扣除金币
+            currentPlayer.gold -= unitCost;
+            
+            // 创建新单位
+            const newUnit = {
+                id: Date.now() + Math.floor(Math.random() * 10000),  // 生成唯一ID
+                type: unitType,
+                x: x,
+                y: y,
+                health: UNITS[unitType].health,
+                hasMoved: false,
+                hasAttacked: false,
+                ownerId: currentPlayer.id, // 明确设置单位所有者ID
+                requiresMaintenance: true  // 直接招募的单位需要维护费
+            };
+            
+            // 将单位添加到地图和玩家单位列表
+            tile.unit = newUnit;
+            currentPlayer.units.push(newUnit);
+            
+            // 增加军事维护费
+            currentPlayer.militaryMaintenance += UNITS[unitType].maintenance;
+            
+            // 添加日志
+            addLogEntry(`${currentPlayer.name}招募了一名${UNITS[unitType].name}，花费${unitCost}金币。`);
+            
+            // 显示通知
+            showNotification(`招募${UNITS[unitType].name}成功！`);
+            
+            return true;
+        }
+        
+        // 更新选中格子信息
+        function updateSelectionInfo() {
+            if (gameState.selectedTile) {
+                const tileX = gameState.selectedTile.x;
+                const tileY = gameState.selectedTile.y;
+                const tileIndex = tileY * GRID_WIDTH + tileX;
+                const tile = gameState.map[tileIndex];
+                const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+                
+                document.getElementById('selection-info').style.display = 'block';
+                
+                let tileOwnerText = '无主之地';
+                let territoryControlHtml = '';
+                
+                if (tile.ownerId !== null) {
+                    const owner = gameState.players[tile.ownerId];
+                    tileOwnerText = `<span style="color: ${owner.color.main}">${owner.name}</span> 的领土`;
+                    
+                    // 添加领土控制值显示
+                    const controlPercent = Math.floor((tile.territoryControl / gameState.territoryControlMax) * 100);
+                    territoryControlHtml = `
+                        <div style="margin-top: 5px;">
+                            <strong>领土控制值:</strong> ${tile.territoryControl}/${gameState.territoryControlMax} (${controlPercent}%)
+                            <div style="width: 100%; background-color: #ddd; height: 8px; margin-top: 3px;">
+                                <div style="width: ${controlPercent}%; background-color: ${owner.color.main}; height: 8px;"></div>
+                            </div>
+                        </div>
+                    `;
+                } else if (tile.territoryControl > 0) {
+                    // 中立领土但有控制值
+                    const controlPercent = Math.floor((tile.territoryControl / gameState.territoryControlMax) * 100);
+                    territoryControlHtml = `
+                        <div style="margin-top: 5px;">
+                            <strong>领土控制值:</strong> ${tile.territoryControl}/${gameState.territoryControlMax} (${controlPercent}%)
+                            <div style="width: 100%; background-color: #ddd; height: 8px; margin-top: 3px;">
+                                <div style="width: ${controlPercent}%; background-color: #999; height: 8px;"></div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                let buildingText = '无建筑';
+                let productionButtons = '';
+                
+                if (tile.building) {
+                    const buildingType = tile.building.type;
+                    let buildingName;
+                    
+                    if (buildingType === 'capital') {
+                        buildingName = '首都';
+                    } else if (BUILDINGS[buildingType]) {
+                        buildingName = BUILDINGS[buildingType].name;
+                    } else {
+                        buildingName = buildingType;
+                    }
+                    
+                    // 获取建筑健康信息
+                    let healthInfo = '';
+                    if (tile.building.health !== undefined) {
+                        const maxHealth = buildingType === 'capital' ? BUILDINGS.capital.maxHealth : (BUILDINGS[buildingType] ? BUILDINGS[buildingType].maxHealth : 200);
+                        const healthPercent = Math.floor((tile.building.health / maxHealth) * 100);
+                        
+                        // 根据健康值设置颜色
+                        let healthColor = '#2ecc71'; // 绿色: 健康
+                        if (healthPercent < 30) {
+                            healthColor = '#e74c3c'; // 红色: 危险
+                        } else if (healthPercent < 60) {
+                            healthColor = '#f39c12'; // 黄色: 警告
+                        }
+                        
+                        healthInfo = `
+                            <div style="margin-top: 5px;">
+                                <strong>健康值:</strong> ${tile.building.health}/${maxHealth} (${healthPercent}%)
+                                <div style="width: 100%; background-color: #ddd; height: 8px; margin-top: 3px;">
+                                    <div style="width: ${healthPercent}%; background-color: ${healthColor}; height: 8px;"></div>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
+                    buildingText = `
+                        <div>
+                            <strong>建筑:</strong> ${buildingName}
+                            ${healthInfo}
+                        </div>
+                    `;
+                    
+                    // 如果是当前玩家的军厂或大军厂，显示生产按钮
+                    if (tile.ownerId === currentPlayer.id) {
+                        const isProducing = gameState.factoryProduction.productionQueues.find(q => 
+                            q.buildingId === tile.building.id
+                        );
+                        
+                        if (buildingType === 'armoryFactory' && !isProducing) {
+                            const canProduceInfantry = gameState.factoryProduction.infantryProducedThisRound < gameState.factoryProduction.infantryProductionLimit;
+                            
+                            productionButtons = `
+                                <div style="margin-top: 10px; border-top: 1px solid #ddd; padding-top: 5px;">
+                                    <strong>军厂生产:</strong><br>
+                                    <button id="produce-infantry-btn" class="military-action-btn" 
+                                        ${!canProduceInfantry ? 'disabled' : ''}
+                                        onclick="startFactoryProduction(gameState.map[${tileIndex}], 'infantry')">
+                                        生产步兵 (2回合)
+                                    </button>
+                                    <small>本轮已生产 ${gameState.factoryProduction.infantryProducedThisRound}/${gameState.factoryProduction.infantryProductionLimit} 个步兵</small>
+                                </div>
+                            `;
+                        } else if (buildingType === 'bigArmoryFactory' && !isProducing) {
+                            productionButtons = `
+                                <div style="margin-top: 10px; border-top: 1px solid #ddd; padding-top: 5px;">
+                                    <strong>大军厂生产:</strong><br>
+                                    <button id="produce-infantry-big-btn" class="military-action-btn" 
+                                        onclick="startFactoryProduction(gameState.map[${tileIndex}], 'infantry')">
+                                        生产步兵 (4回合)
+                                    </button>
+                                </div>
+                            `;
+                        }
+                        
+                        // 显示生产状态
+                        if (isProducing) {
+                            const item = gameState.factoryProduction.productionQueues.find(q => 
+                                q.buildingId === tile.building.id
+                            );
+                            if (item) {
+                                const unitName = UNITS[item.unitType].name;
+                                const progress = Math.floor((item.progress / item.totalTurns) * 100);
+                                
+                                productionButtons = `
+                                    <div style="margin-top: 10px; border-top: 1px solid #ddd; padding-top: 5px;">
+                                        <strong>正在生产:</strong> ${unitName}<br>
+                                        <div style="width: 100%; background-color: #ddd; height: 10px; margin-top: 5px;">
+                                            <div style="width: ${progress}%; background-color: #4CAF50; height: 10px;"></div>
+                                        </div>
+                                        <small>进度: ${item.progress}/${item.totalTurns} 回合 (${progress}%)</small>
+                                    </div>
+                                `;
+                            }
+                        }
+                    }
+                }
+                
+                let unitText = '';
+                if (tile.unit) {
+                    const unitType = tile.unit.type;
+                    const unit = UNITS[unitType];
+                    const healthPercent = Math.floor((tile.unit.health / unit.health) * 100);
+                    // 使用单位自身的ownerId而不是格子的ownerId
+                    const unitOwnerId = tile.unit.ownerId !== undefined ? tile.unit.ownerId : tile.ownerId;
+                    const owner = gameState.players[unitOwnerId];
+                    
+                    const maintenanceText = tile.unit.requiresMaintenance === false ? 
+                        '<span style="color: green">免维护费</span>' : 
+                        `<span style="color: #e74c3c">维护费: ${unit.maintenance}/回合</span>`;
+                    
+                    // 添加关于单位所在领土的信息
+                    let territoryInfo = '';
+                    if (tile.ownerId !== unitOwnerId && tile.ownerId !== null) {
+                        const territoryOwner = gameState.players[tile.ownerId];
+                        territoryInfo = `<div style="color: #e74c3c; margin-top: 5px;">
+                            <strong>警告:</strong> 此单位位于${territoryOwner.name}的领土上
+                        </div>`;
+                    }
+                    
+                    unitText = `
+                        <div style="margin-top: 10px; border-top: 1px solid #ddd; padding-top: 5px;">
+                            <strong>军事单位:</strong> ${unit.name}<br>
+                            <strong>所属:</strong> <span style="color: ${owner.color.main}">${owner.name}</span><br>
+                            <strong>生命值:</strong> ${tile.unit.health}/${unit.health} (${healthPercent}%)<br>
+                            <strong>攻击力:</strong> ${unit.attack} | <strong>防御力:</strong> ${unit.defense}<br>
+                            ${maintenanceText}
+                            ${territoryInfo}
+                        </div>
+                    `;
+                    
+                    // 如果是当前玩家的单位，显示军事行动按钮
+                    if (unitOwnerId === gameState.players[gameState.currentPlayerIndex].id) {
+                        document.getElementById('military-actions-panel').style.display = 'block';
+                        
+                        // 更新按钮状态
+                        document.getElementById('attack-btn').disabled = tile.unit.hasAttacked;
+                        document.getElementById('move-btn').disabled = tile.unit.hasMoved;
+                        
+                        // 保存选中的单位
+                        gameState.selectedUnit = {
+                            x: tileX,
+                            y: tileY,
+                            type: unitType,
+                            id: tile.unit.id
+                        };
+                    } else {
+                        document.getElementById('military-actions-panel').style.display = 'none';
+                        gameState.selectedUnit = null;
+                    }
+                } else {
+                    document.getElementById('military-actions-panel').style.display = 'none';
+                    gameState.selectedUnit = null;
+                }
+                
+                let terrainText = '平原';
+                switch(tile.terrain) {
+                    case 'forest':
+                        terrainText = '森林';
+                        break;
+                    case 'mountain':
+                        terrainText = '山地';
+                        break;
+                    case 'water':
+                        terrainText = '水域';
+                        break;
+                }
+                
+                // 更新建筑限制信息
+                let buildingLimitInfo = '';
+                if (tile.ownerId === currentPlayer.id) {
+                    buildingLimitInfo = `
+                        <div style="margin-top: 10px; font-size: 11px; color: #666;">
+                            <strong>本轮建造限制:</strong><br>
+                            军厂: ${gameState.factoryProduction.armoryFactoryBuiltThisRound}/${gameState.factoryProduction.armoryFactoryLimit}<br>
+                            大军厂: ${gameState.factoryProduction.bigArmoryFactoryBuiltThisRound}/${gameState.factoryProduction.bigArmoryFactoryLimit}
+                        </div>
+                    `;
+                }
+                
+                document.getElementById('tile-info').innerHTML = `
+                    <p>位置: (${tileX}, ${tileY})</p>
+                    <p>地形: ${terrainText}</p>
+                    <p>所属: ${tileOwnerText}</p>
+                    ${territoryControlHtml}
+                    <p>${buildingText}</p>
+                    ${productionButtons}
+                    ${unitText}
+                    ${buildingLimitInfo}
+                `;
+            } else {
+                document.getElementById('selection-info').style.display = 'none';
+                document.getElementById('military-actions-panel').style.display = 'none';
+            }
+        }
+        
+        // 计算玩家拥有的建筑数量
+        function countPlayerBuildings(playerId) {
+            return gameState.map.filter(tile => 
+                tile.ownerId === playerId && tile.building !== null
+            ).length;
+        }
+        
+        // 计算所有玩家的收入
+        function calculateIncome() {
+            gameState.players.forEach(player => {
+                let income = 0;
+                
+                // 遍历地图，计算该玩家所有建筑的收入
+                gameState.map.forEach(tile => {
+                    if (tile.ownerId === player.id && tile.building) {
+                        const buildingType = tile.building.type;
+                        
+                        if (buildingType === 'capital') {
+                            income += 50; // 首都收入
+                        } else if (BUILDINGS[buildingType]) {
+                            income += BUILDINGS[buildingType].income;
+                        }
+                    }
+                });
+                
+                player.income = income;
+            });
+        }
+        
+        // 处理回合结束
+        function endTurn() {
+            // 检查是否有正在建造的建筑
+            if (gameState.buildingInProgress) {
+                // 推进建筑进度
+                gameState.buildingInProgress.progress += 50; // 每回合增加50%进度
+                
+                // 如果建筑完成
+                if (gameState.buildingInProgress.progress >= 100) {
+                    const { x, y, type } = gameState.buildingInProgress;
+                    const tileIndex = y * GRID_WIDTH + x;
+                    const tile = gameState.map[tileIndex];
+                    
+                    // 完成建筑
+                    tile.building = {
+                        type: type,
+                        name: BUILDINGS[type].name,
+                        id: generateBuildingId(),
+                        health: BUILDINGS[type].maxHealth // 设置健康值
+                    };
+                    
+                    addLogEntry(`${gameState.players[tile.ownerId].name}完成了${BUILDINGS[type].name}的建造。`);
+                    showNotification(`${BUILDINGS[type].name}建造完成！`);
+                    
+                    // 检查是否是军厂、大军厂或军营，更新每轮建造计数
+                    if (type === 'armoryFactory') {
+                        gameState.factoryProduction.armoryFactoryBuiltThisRound++;
+                    } else if (type === 'bigArmoryFactory') {
+                        gameState.factoryProduction.bigArmoryFactoryBuiltThisRound++;
+                    } else if (type === 'barracks') {
+                        gameState.factoryProduction.barracksBuiltThisRound++;
+                    }
+                    
+                    // 扩张领土
+                    expandTerritory(x, y, tile.ownerId);
+                    
+                    // 重置建造状态
+                    gameState.buildingInProgress = null;
+                }
+            }
+            
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            // 处理军事工厂生产
+            processFactoryProduction();
+            
+            // 处理医院治疗单位
+            processHospitalHealing();
+
+            // 处理敌方单位对领土的影响
+            processTerritoryControl();
+            
+            // 不再调用建筑物健康值恢复函数
+            // healBuildings(currentPlayer.id);
+
+            // 为当前玩家增加收入（减去军事维护费）
+            const totalIncome = currentPlayer.income - currentPlayer.militaryMaintenance;
+            currentPlayer.gold += totalIncome;
+            
+            if (totalIncome >= 0) {
+                addLogEntry(`${currentPlayer.name}回合结束，获得${totalIncome}金币收入。`);
+            } else {
+                addLogEntry(`${currentPlayer.name}回合结束，花费${Math.abs(totalIncome)}金币用于部队维护。`);
+            }
+            
+            // 切换到下一个玩家
+            gameState.currentPlayerIndex = (gameState.currentPlayerIndex + 1) % gameState.players.length;
+            
+            // 如果回到第一个玩家，增加回合数
+            if (gameState.currentPlayerIndex === 0) {
+                gameState.round++;
+                addLogEntry(`=========== 第${gameState.round}回合开始 ===========`);
+                
+                // 重置每轮建造计数和生产计数
+                gameState.factoryProduction.armoryFactoryBuiltThisRound = 0;
+                gameState.factoryProduction.bigArmoryFactoryBuiltThisRound = 0;
+                gameState.factoryProduction.barracksBuiltThisRound = 0;
+                gameState.factoryProduction.infantryProducedThisRound = 0;
+                gameState.factoryProduction.cavalryProducedThisRound = 0;
+                
+                // 检查胜利条件
+                if (gameState.round > 5) { // 至少5回合后才检查
+                    checkVictoryConditions();
+                }
+            }
+            
+            const nextPlayer = gameState.players[gameState.currentPlayerIndex];
+            addLogEntry(`${nextPlayer.name}的回合开始。`);
+            
+            // 重置选择状态
+            gameState.selectedTile = null;
+            gameState.buildingMode = false;
+            gameState.selectedBuildingType = null;
+            gameState.recruitMode = false;
+            gameState.selectedUnitType = null;
+            gameState.attackMode = false;
+            gameState.moveMode = false;
+            gameState.selectedUnit = null;
+            
+            // 重置所有单位的移动和攻击状态
+            nextPlayer.units.forEach(unit => {
+                unit.hasMoved = false;
+                unit.hasAttacked = false;
+                
+                // 更新地图上的单位状态
+                const tileIndex = unit.y * GRID_WIDTH + unit.x;
+                if (gameState.map[tileIndex].unit) {
+                    gameState.map[tileIndex].unit.hasMoved = false;
+                    gameState.map[tileIndex].unit.hasAttacked = false;
+                }
+            });
+            
+            // 重新计算收入
+            calculateIncome();
+            
+            // 更新界面
+            updateUI();
+            drawMap();
+            
+            // 显示回合切换通知
+            showNotification(`${nextPlayer.name}的回合开始`);
+        }
+        
+        // 检查胜利条件
+        function checkVictoryConditions() {
+            // 检查是否有玩家首都被摧毁
+            const playersWithCapital = [];
+            
+            gameState.map.forEach(tile => {
+                if (tile.building && tile.building.type === 'capital') {
+                    playersWithCapital.push(tile.ownerId);
+                }
+            });
+            
+            // 如果有玩家没有首都了，宣布其他玩家胜利
+            if (playersWithCapital.length < gameState.players.length) {
+                const winners = gameState.players.filter(player => 
+                    playersWithCapital.includes(player.id)
+                );
+                
+                announceWinner(winners, "摧毁对方首都");
+                return;
+            }
+            
+            // 如果回合数达到30，检查资源优势
+            if (gameState.round >= 30) {
+                const playerScores = calculatePlayerScores();
+                
+                // 获取最高分
+                const maxScore = Math.max(...playerScores.map(p => p.score));
+                const winners = playerScores.filter(p => p.score === maxScore);
+                
+                // 如果最高分的玩家只有一个，且领先第二名至少30%
+                if (winners.length === 1) {
+                    const secondHighestScore = playerScores
+                        .filter(p => p.score !== maxScore)
+                        .sort((a, b) => b.score - a.score)[0]?.score || 0;
+                    
+                    if (maxScore > secondHighestScore * 1.3) {
+                        const winningPlayer = gameState.players.find(p => p.id === winners[0].playerId);
+                        announceWinner([winningPlayer], "资源优势");
+                        return;
+                    }
+                }
+            }
+        }
+        
+        // 计算玩家得分
+        function calculatePlayerScores() {
+            const scores = [];
+            
+            gameState.players.forEach(player => {
+                // 计算领土数量
+                const territoryCount = gameState.map.filter(tile => 
+                    tile.ownerId === player.id
+                ).length;
+                
+                // 计算建筑数量和价值
+                let buildingValue = 0;
+                gameState.map.forEach(tile => {
+                    if (tile.ownerId === player.id && tile.building) {
+                        const buildingType = tile.building.type;
+                        if (buildingType === 'capital') {
+                            buildingValue += 1000; // 首都价值
+                        } else if (BUILDINGS[buildingType]) {
+                            buildingValue += BUILDINGS[buildingType].cost;
+                        }
+                    }
+                });
+                
+                // 计算军事力量
+                let militaryPower = 0;
+                player.units.forEach(unit => {
+                    militaryPower += UNITS[unit.type].cost;
+                    militaryPower += (unit.health / UNITS[unit.type].health) * UNITS[unit.type].attack;
+                });
+                
+                // 计算总分
+                const totalScore = 
+                    player.gold * 0.5 + 
+                    buildingValue * 0.3 + 
+                    territoryCount * 10 + 
+                    militaryPower * 0.7 + 
+                    player.income * 20;
+                
+                scores.push({
+                    playerId: player.id,
+                    score: Math.round(totalScore)
+                });
+            });
+            
+            return scores;
+        }
+        
+        // 宣布胜利
+        function announceWinner(winners, reason) {
+            let winnerNames = winners.map(w => w.name).join(' 和 ');
+            
+            // 显示胜利消息
+            const victoryMessage = `游戏结束！${winnerNames} 通过${reason}获得了胜利！`;
+            addLogEntry(victoryMessage);
+            
+            // 创建胜利弹窗
+            const victoryOverlay = document.createElement('div');
+            victoryOverlay.style.position = 'fixed';
+            victoryOverlay.style.top = '0';
+            victoryOverlay.style.left = '0';
+            victoryOverlay.style.width = '100%';
+            victoryOverlay.style.height = '100%';
+            victoryOverlay.style.backgroundColor = 'rgba(0,0,0,0.8)';
+            victoryOverlay.style.display = 'flex';
+            victoryOverlay.style.flexDirection = 'column';
+            victoryOverlay.style.justifyContent = 'center';
+            victoryOverlay.style.alignItems = 'center';
+            victoryOverlay.style.zIndex = '1000';
+            
+            const victoryBox = document.createElement('div');
+            victoryBox.style.backgroundColor = '#fff';
+            victoryBox.style.padding = '30px';
+            victoryBox.style.borderRadius = '10px';
+            victoryBox.style.textAlign = 'center';
+            victoryBox.style.maxWidth = '80%';
+            
+            // 添加胜利标题
+            const victoryTitle = document.createElement('h2');
+            victoryTitle.textContent = '胜利!';
+            victoryTitle.style.color = winners[0].color.main;
+            victoryTitle.style.fontSize = '32px';
+            victoryTitle.style.marginBottom = '20px';
+            
+            // 添加胜利描述
+            const victoryDesc = document.createElement('p');
+            victoryDesc.innerHTML = `${winnerNames} 通过<strong>${reason}</strong>获得了胜利！`;
+            victoryDesc.style.fontSize = '18px';
+            victoryDesc.style.marginBottom = '20px';
+            
+            // 添加玩家得分表
+            const scoreTable = document.createElement('div');
+            scoreTable.style.marginBottom = '20px';
+            
+            const playerScores = calculatePlayerScores();
+            playerScores.sort((a, b) => b.score - a.score);
+            
+            playerScores.forEach(playerScore => {
+                const player = gameState.players.find(p => p.id === playerScore.playerId);
+                const scoreRow = document.createElement('div');
+                scoreRow.style.display = 'flex';
+                scoreRow.style.justifyContent = 'space-between';
+                scoreRow.style.padding = '5px 0';
+                scoreRow.style.borderBottom = '1px solid #eee';
+                
+                const playerName = document.createElement('span');
+                playerName.textContent = player.name;
+                playerName.style.fontWeight = 'bold';
+                playerName.style.color = player.color.main;
+                
+                const scoreDisplay = document.createElement('span');
+                scoreDisplay.textContent = `得分: ${playerScore.score}`;
+                
+                scoreRow.appendChild(playerName);
+                scoreRow.appendChild(scoreDisplay);
+                scoreTable.appendChild(scoreRow);
+            });
+            
+            // 添加新游戏按钮
+            const newGameBtn = document.createElement('button');
+            newGameBtn.textContent = '开始新游戏';
+            newGameBtn.style.padding = '10px 20px';
+            newGameBtn.style.backgroundColor = '#4CAF50';
+            newGameBtn.style.color = 'white';
+            newGameBtn.style.border = 'none';
+            newGameBtn.style.borderRadius = '4px';
+            newGameBtn.style.cursor = 'pointer';
+            newGameBtn.style.fontSize = '16px';
+            
+            newGameBtn.addEventListener('click', () => {
+                document.body.removeChild(victoryOverlay);
+                const playerCount = Math.min(parseInt(prompt('请输入玩家数量 (2-5):', '2')) || 2, MAX_PLAYERS);
+                initGame(Math.max(2, playerCount));
+            });
+            
+            // 组装弹窗
+            victoryBox.appendChild(victoryTitle);
+            victoryBox.appendChild(victoryDesc);
+            victoryBox.appendChild(scoreTable);
+            victoryBox.appendChild(newGameBtn);
+            victoryOverlay.appendChild(victoryBox);
+            
+            // 添加到页面
+            document.body.appendChild(victoryOverlay);
+        }
+        
+        // 处理格子点击
+        function handleTileClick(x, y) {
+            const tileX = Math.floor(x / GRID_SIZE);
+            const tileY = Math.floor(y / GRID_SIZE);
+            
+            if (tileX < 0 || tileX >= GRID_WIDTH || tileY < 0 || tileY >= GRID_HEIGHT) {
+                return;
+            }
+            
+            const tileIndex = tileY * GRID_WIDTH + tileX;
+            const tile = gameState.map[tileIndex];
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            // 如果是建筑模式
+            if (gameState.buildingMode && gameState.selectedBuildingType) {
+                // 确认该位置可以建造
+                if (tile.ownerId === currentPlayer.id && !tile.building) {
+                    // 检查地形是否适合建造
+                    if (tile.terrain === 'water') {
+                        showNotification("不能在水域上建造！", "error");
+                        return;
+                    }
+                    
+                    if (tile.terrain === 'mountain' && gameState.selectedBuildingType !== 'ironMine' && 
+                        gameState.selectedBuildingType !== 'goldMine' && gameState.selectedBuildingType !== 'silverMine') {
+                        showNotification("只能在山地上建造矿场！", "error");
+                        return;
+                    }
+                    
+                    const buildingType = gameState.selectedBuildingType;
+                    const buildingCost = BUILDINGS[buildingType].cost;
+                    
+                    // 检查玩家是否有足够的金币
+                    if (currentPlayer.gold >= buildingCost) {
+                        // 扣除金币
+                        currentPlayer.gold -= buildingCost;
+                        
+                        // 开始建造过程
+                        gameState.buildingInProgress = {
+                            x: tileX,
+                            y: tileY,
+                            type: buildingType,
+                            progress: 50 // 第一回合完成50%
+                        };
+                        
+                        // 记录日志
+                        addLogEntry(`${currentPlayer.name}开始建造${BUILDINGS[buildingType].name}，花费${buildingCost}金币。`);
+                        
+                        // 显示通知
+                        showNotification(`开始建造${BUILDINGS[buildingType].name}，将在下回合完成。`);
+                        
+                        // 退出建筑模式
+                        gameState.buildingMode = false;
+                        gameState.selectedBuildingType = null;
+                        buildingPreview.style.display = 'none';
+                        
+                        // 更新UI
+                        updateUI();
+                    } else {
+                        showNotification("金币不足！", "error");
+                    }
+                } else {
+                    if (tile.ownerId !== currentPlayer.id) {
+                        showNotification("不能在其他玩家的领土上建造！", "error");
+                    } else if (tile.building) {
+                        showNotification("这个位置已经有建筑了！", "error");
+                    }
+                }
+            }
+            // 如果是招募单位模式
+            else if (gameState.recruitMode && gameState.selectedUnitType) {
+                // 确认该位置可以招募单位
+                if (tile.ownerId === currentPlayer.id) {
+                    // 不能在水域上放置单位
+                    if (tile.terrain === 'water') {
+                        showNotification("不能在水域上放置单位！", "error");
+                        return;
+                    }
+                    
+                    // 不能在已有单位的格子上放置
+                    if (tile.unit) {
+                        showNotification("此位置已有单位！", "error");
+                        return;
+                    }
+                    
+                    // 招募单位
+                    if (recruitUnit(tileX, tileY, gameState.selectedUnitType)) {
+                        // 退出招募模式
+                        gameState.recruitMode = false;
+                        gameState.selectedUnitType = null;
+                        document.getElementById('unit-preview').style.display = 'none';
+                        
+                        // 更新UI
+                        updateUI();
+                    }
+                } else {
+                    showNotification("只能在自己的领土上放置单位！", "error");
+                }
+            }
+            // 如果是移动模式
+            else if (gameState.moveMode && gameState.selectedUnit) {
+                // 确认移动目标是有效的
+                const srcX = gameState.selectedUnit.x;
+                const srcY = gameState.selectedUnit.y;
+                const srcTileIndex = srcY * GRID_WIDTH + srcX;
+                const srcTile = gameState.map[srcTileIndex];
+                
+                // 计算曼哈顿距离
+                const distance = Math.abs(tileX - srcX) + Math.abs(tileY - srcY);
+                const moveRange = UNITS[gameState.selectedUnit.type].moveRange;
+                
+                if (distance <= moveRange && distance > 0) {
+                    // 检查目标格子是否已有单位
+                    if (tile.unit) {
+                        showNotification("目标位置已有单位！", "error");
+                        return;
+                    }
+                    
+                    // 检查目标格子是否是水域
+                    if (tile.terrain === 'water') {
+                        showNotification("不能移动到水域！", "error");
+                        return;
+                    }
+                    
+                    // 执行移动
+                    const unit = srcTile.unit;
+                    unit.hasMoved = true;
+                    unit.x = tileX;
+                    unit.y = tileY;
+                    
+                    // 保存单位的原始所有者ID（修复所有权问题）
+                    const unitOwnerId = unit.ownerId !== undefined ? unit.ownerId : srcTile.ownerId;
+                    
+                    // 保存单位的原始所有者
+                    if (unit.ownerId === undefined) {
+                        unit.ownerId = unitOwnerId;
+                    }
+                    
+                    // 更新地图，确保单位所有权不变
+                    tile.unit = unit;
+                    srcTile.unit = null;
+                    
+                    // 添加关于敌方领土的效果
+                    if (tile.ownerId !== unitOwnerId && tile.ownerId !== null) {
+                        const enemyPlayer = gameState.players[tile.ownerId];
+                        const unitPlayer = gameState.players[unitOwnerId];
+                        addLogEntry(`${unitPlayer.name}的${UNITS[unit.type].name}进入了${enemyPlayer.name}的领土，单位将处于危险状态。`);
+                    }
+                    
+                    // 添加日志
+                    addLogEntry(`${gameState.players[unitOwnerId].name}的${UNITS[unit.type].name}从(${srcX},${srcY})移动到(${tileX},${tileY})。`);
+                    
+                    // 结束移动模式
+                    gameState.moveMode = false;
+                    gameState.selectedUnit = null;
+                    
+                    // 更新UI
+                    updateUI();
+                } else {
+                    showNotification("移动距离超出范围！", "error");
+                }
+            }
+            // 如果是攻击模式
+            else if (gameState.attackMode && gameState.selectedUnit) {
+                // 确认攻击目标是有效的
+                const srcX = gameState.selectedUnit.x;
+                const srcY = gameState.selectedUnit.y;
+                const srcTileIndex = srcY * GRID_WIDTH + srcX;
+                const srcTile = gameState.map[srcTileIndex];
+                
+                // 获取攻击者所有者ID
+                const attackerOwnerId = srcTile.unit.ownerId !== undefined ? srcTile.unit.ownerId : srcTile.ownerId;
+                
+                // 计算曼哈顿距离
+                const distance = Math.abs(tileX - srcX) + Math.abs(tileY - srcY);
+                
+                // 使用单位特定的攻击范围
+                const attackRange = UNITS[gameState.selectedUnit.type].attackRange;
+                
+                if (distance <= attackRange) {
+                    // 检查目标格子是否有敌方单位 - 使用unit.ownerId而不是tile.ownerId
+                    if (tile.unit) {
+                        const defenderOwnerId = tile.unit.ownerId !== undefined ? tile.unit.ownerId : tile.ownerId;
+                        
+                        if (defenderOwnerId !== attackerOwnerId) {
+                            // 执行攻击
+                            const attackerUnit = srcTile.unit;
+                            const defenderUnit = tile.unit;
+                            const attackerPlayer = gameState.players[attackerOwnerId];
+                            const defenderPlayer = gameState.players[defenderOwnerId];
+                            
+                            // 计算伤害
+                            const attackDamage = Math.max(0, UNITS[attackerUnit.type].attack - UNITS[defenderUnit.type].defense / 2);
+                            
+                            // 造成伤害
+                            defenderUnit.health -= attackDamage;
+                            
+                            // 添加日志
+                            addLogEntry(`${attackerPlayer.name}的${UNITS[attackerUnit.type].name}攻击了${defenderPlayer.name}的${UNITS[defenderUnit.type].name}，造成${attackDamage}点伤害。`);
+                            
+                            // 检查目标单位是否被消灭
+                            if (defenderUnit.health <= 0) {
+                                // 移除被消灭的单位
+                                const defenderIndex = defenderPlayer.units.findIndex(u => u.id === defenderUnit.id);
+                                if (defenderIndex !== -1) {
+                                    defenderPlayer.units.splice(defenderIndex, 1);
+                                }
+                                
+                                // 减少维护费
+                                if (defenderUnit.requiresMaintenance !== false) {
+                                    defenderPlayer.militaryMaintenance -= UNITS[defenderUnit.type].maintenance;
+                                }
+                                
+                                // 清除格子上的单位
+                                tile.unit = null;
+                                
+                                // 添加日志
+                                addLogEntry(`${defenderPlayer.name}的${UNITS[defenderUnit.type].name}被消灭了！`);
+                            }
+                            
+                            // 标记攻击者已攻击
+                            attackerUnit.hasAttacked = true;
+                            
+                            // 结束攻击模式
+                            gameState.attackMode = false;
+                            
+                            // 更新UI
+                            updateUI();
+                        } else {
+                            showNotification("不能攻击自己的单位！", "error");
+                        }
+                    } 
+                    // 检查目标格子是否有敌方建筑但没有防守单位
+                    else if (!tile.unit && tile.building && tile.ownerId !== attackerOwnerId) {
+                        // 执行对建筑的攻击，传递攻击者ID
+                        attackBuilding(srcTile, tile, attackerOwnerId);
+                        
+                        // 结束攻击模式
+                        gameState.attackMode = false;
+                        
+                        // 更新UI
+                        updateUI();
+                    }
+                    else if (!tile.unit && !tile.building) {
+                        showNotification("目标位置没有单位或建筑！", "error");
+                    } else {
+                        showNotification("不能攻击自己的单位或建筑！", "error");
+                    }
+                } else {
+                    showNotification(`攻击距离超出范围！最大攻击范围为${attackRange}。`, "error");
+                }
+            }
+            // 如果是修理模式
+            else if (gameState.repairMode && gameState.selectedTile) {
+                // 确保选中的源格子有修理厂
+                const selectedTileIndex = gameState.selectedTile.y * GRID_WIDTH + gameState.selectedTile.x;
+                const selectedTile = gameState.map[selectedTileIndex];
+                
+                if (selectedTile.building && selectedTile.building.type === 'repairShop') {
+                    // 尝试修理被点击的格子上的建筑
+                    if (tile.building) {
+                        // 检查是否是己方建筑
+                        if (tile.ownerId === gameState.currentPlayerIndex) {
+                            // 调用修理函数
+                            repairBuilding(selectedTile, tile);
+                        } else {
+                            showNotification("无法修理敌方建筑！", "error");
+                        }
+                    } else {
+                        showNotification("该位置没有建筑可以修理！", "error");
+                    }
+                } else {
+                    showNotification("请先选择一个修理厂！", "error");
+                }
+                
+                // 退出修理模式
+                gameState.repairMode = false;
+                
+                // 更新UI
+                updateUI();
+            }
+            // 普通选择格子
+            else {
+                gameState.selectedTile = { x: tileX, y: tileY };
+                updateSelectionInfo();
+                
+                // 如果是当前玩家的修理厂，显示修理按钮
+                if (tile.building && tile.building.type === 'repairShop' && tile.ownerId === gameState.currentPlayerIndex) {
+                    const actionPanel = document.getElementById('action-panel');
+                    if (actionPanel) {
+                        // 创建修理按钮
+                        const repairButton = document.createElement('button');
+                        repairButton.textContent = '修理建筑';
+                        repairButton.className = 'action-button';
+                        repairButton.onclick = function() {
+                            // 进入修理模式
+                            gameState.repairMode = true;
+                            showNotification("请选择要修理的建筑", "info");
+                            
+                            // 高亮显示可以修理的建筑
+                            highlightRepairableBuildings(gameState.currentPlayerIndex);
+                        };
+                        actionPanel.appendChild(repairButton);
+                    }
+                }
+            }
+            
+            // 重绘地图
+            drawMap();
+        }
+        
+        // 显示通知
+        function showNotification(message, type = "info") {
+            notification.textContent = message;
+            notification.className = "game-notification show";
+            
+            if (type === "error") {
+                notification.style.backgroundColor = "rgba(231, 76, 60, 0.8)";
+            } else {
+                notification.style.backgroundColor = "rgba(0, 0, 0, 0.8)";
+            }
+            
+            setTimeout(() => {
+                notification.className = "game-notification";
+            }, 2000);
+        }
+        
+        // 添加游戏日志
+        function addLogEntry(message) {
+            const now = new Date();
+            const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry';
+            logEntry.innerHTML = `<small>[${timeStr}]</small> ${message}`;
+            
+            gameLog.appendChild(logEntry);
+            
+            // 自动滚动到底部
+            gameLog.scrollTop = gameLog.scrollHeight;
+            
+            // 保持日志条目限制
+            if (gameState.gameLog.length > 50) {
+                gameState.gameLog.shift();
+            }
+            gameState.gameLog.push(message);
+        }
+        
+        // 扩张领土
+        function expandTerritory(x, y, playerId) {
+            // 建筑周围的影响范围
+            const radius = 1;
+            
+            // 遍历周围的格子
+            for (let dy = -radius; dy <= radius; dy++) {
+                for (let dx = -radius; dx <= radius; dx++) {
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    
+                    // 确保在地图范围内
+                    if (nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT) {
+                        const tileIndex = ny * GRID_WIDTH + nx;
+                        const tile = gameState.map[tileIndex];
+                        
+                        // 只占领没有所有者的格子
+                        if (tile.ownerId === null) {
+                            tile.ownerId = playerId;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 取消当前操作
+        function cancelAction() {
+            if (gameState.buildingMode) {
+                gameState.buildingMode = false;
+                gameState.selectedBuildingType = null;
+                document.getElementById('building-preview').style.display = 'none';
+                showNotification("已取消建造");
+            } else if (gameState.recruitMode) {
+                gameState.recruitMode = false;
+                gameState.selectedUnitType = null;
+                document.getElementById('unit-preview').style.display = 'none';
+                showNotification("已取消招募");
+            } else if (gameState.attackMode) {
+                gameState.attackMode = false;
+                showNotification("已取消攻击");
+            } else if (gameState.moveMode) {
+                gameState.moveMode = false;
+                showNotification("已取消移动");
+            } else if (gameState.buildingInProgress) {
+                // 返还一半的建筑费用
+                const buildingType = gameState.buildingInProgress.type;
+                const refund = Math.floor(BUILDINGS[buildingType].cost * 0.5);
+                const playerId = gameState.map[gameState.buildingInProgress.y * GRID_WIDTH + gameState.buildingInProgress.x].ownerId;
+                gameState.players[playerId].gold += refund;
+                
+                addLogEntry(`${gameState.players[playerId].name}取消了${BUILDINGS[buildingType].name}的建造，获得${refund}金币退款。`);
+                showNotification(`已取消建造，退还${refund}金币`);
+                
+                gameState.buildingInProgress = null;
+            }
+            
+            // 更新UI
+            updateUI();
+            drawMap();
+        }
+        
+        // 事件监听器
+        canvas.addEventListener('click', (event) => {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            
+            const x = (event.clientX - rect.left) * scaleX;
+            const y = (event.clientY - rect.top) * scaleY;
+            
+            handleTileClick(x, y);
+        });
+        
+        endTurnBtn.addEventListener('click', endTurn);
+        cancelActionBtn.addEventListener('click', cancelAction);
+        
+        // 添加军事行动按钮事件
+        document.getElementById('attack-btn').addEventListener('click', () => {
+            if (gameState.selectedUnit) {
+                gameState.attackMode = true;
+                gameState.moveMode = false;
+                
+                // 显示取消按钮
+                cancelActionBtn.style.display = 'block';
+                cancelActionBtn.textContent = '取消攻击';
+                
+                // 显示通知
+                showNotification("选择要攻击的敌方单位");
+                
+                // 更新地图显示攻击范围
+                drawMap();
+            }
+        });
+        
+        document.getElementById('move-btn').addEventListener('click', () => {
+            if (gameState.selectedUnit) {
+                gameState.moveMode = true;
+                gameState.attackMode = false;
+                
+                // 显示取消按钮
+                cancelActionBtn.style.display = 'block';
+                cancelActionBtn.textContent = '取消移动';
+                
+                // 显示通知
+                showNotification("选择要移动到的位置");
+                
+                // 更新地图显示移动范围
+                drawMap();
+            }
+        });
+        
+        newGameBtn.addEventListener('click', () => {
+            const playerCount = Math.min(parseInt(prompt('请输入玩家数量 (2-5):', '2')) || 2, MAX_PLAYERS);
+            initGame(Math.max(2, playerCount));
+        });
+        
+        // 初始化游戏
+        initGame(2);
+
+        // 单位攻击建筑
+        function attackBuilding(attackerTile, defenderTile, attackerOwnerId) {
+            const attackerUnit = attackerTile.unit;
+            const building = defenderTile.building;
+            const defenderPlayer = gameState.players[defenderTile.ownerId];
+            const attackerPlayer = gameState.players[attackerOwnerId];
+            
+            // 确保建筑有生命值
+            if (!building.health) {
+                if (building.type === 'capital') {
+                    building.health = BUILDINGS.capital.maxHealth; // 使用常量定义的生命值
+                } else if (BUILDINGS[building.type]) {
+                    building.health = BUILDINGS[building.type].maxHealth;
+                } else {
+                    building.health = 200; // 默认生命值
+                }
+            }
+            
+            // 计算伤害 (增加对建筑的伤害系数从1/2到0.75)
+            const attackDamage = Math.floor(UNITS[attackerUnit.type].attack * 0.75);
+            
+            // 造成伤害
+            building.health -= attackDamage;
+            
+            // 添加攻击日志
+            let buildingName = building.name;
+            if (building.type === 'capital') {
+                buildingName = '首都';
+            } else if (BUILDINGS[building.type]) {
+                buildingName = BUILDINGS[building.type].name;
+            }
+            
+            addLogEntry(`${attackerPlayer.name}的${UNITS[attackerUnit.type].name}攻击了${defenderPlayer.name}的${buildingName}，造成${attackDamage}点伤害。`);
+            
+            // 检查建筑是否被摧毁
+            if (building.health <= 0) {
+                // 如果是首都被摧毁，可能会触发胜利条件
+                if (building.type === 'capital') {
+                    addLogEntry(`${defenderPlayer.name}的首都被${attackerPlayer.name}摧毁了！`);
+                    showNotification(`${defenderPlayer.name}的首都被摧毁了！`, "info");
+                } else {
+                    addLogEntry(`${defenderPlayer.name}的${buildingName}被${attackerPlayer.name}摧毁了！`);
+                    showNotification(`${buildingName}被摧毁了！`, "info");
+                    
+                    // 如果是有收入的建筑，减少玩家收入
+                    if (BUILDINGS[building.type] && BUILDINGS[building.type].income) {
+                        defenderPlayer.income -= BUILDINGS[building.type].income;
+                    }
+                }
+                
+                // 清除格子上的建筑
+                defenderTile.building = null;
+                
+                // 检查胜利条件
+                checkVictoryConditions();
+            } else {
+                // 更新建筑损伤状态，影响收益
+                updateBuildingDamageEffect(defenderTile, defenderPlayer);
+            }
+            
+            // 标记攻击者已攻击
+            attackerUnit.hasAttacked = true;
+        }
+
+        // 添加一个新函数，更新建筑损伤对收益的影响
+        function updateBuildingDamageEffect(tile, player) {
+            const building = tile.building;
+            const buildingType = building.type;
+            
+            if (!BUILDINGS[buildingType] || !BUILDINGS[buildingType].income || BUILDINGS[buildingType].income <= 0) {
+                return; // 只处理有正收益的建筑
+            }
+            
+            const maxHealth = BUILDINGS[buildingType].maxHealth;
+            const healthPercent = building.health / maxHealth;
+            
+            // 重置之前可能的收益损失
+            if (building.damagedIncomeReduction) {
+                // 恢复之前减少的收益
+                player.income += building.damagedIncomeReduction;
+                building.damagedIncomeReduction = 0;
+            }
+            
+            let newIncomeReduction = 0;
+            
+            // 根据损伤程度减少收益
+            if (healthPercent < 0.25) {
+                // 低于25%生命值，收益减少50%
+                newIncomeReduction = Math.floor(BUILDINGS[buildingType].income * 0.5);
+                
+                // 记录收益减少的日志，但只在第一次达到该阈值时
+                if (!building.reachedCriticalDamage) {
+                    building.reachedCriticalDamage = true;
+                    addLogEntry(`${player.name}的${BUILDINGS[buildingType].name}严重受损，收益减少50%！`);
+                }
+            } else if (healthPercent < 0.5) {
+                // 低于50%生命值，收益减少25%
+                newIncomeReduction = Math.floor(BUILDINGS[buildingType].income * 0.25);
+                
+                // 记录收益减少的日志，但只在第一次达到该阈值时
+                if (!building.reachedModerateDamage && !building.reachedCriticalDamage) {
+                    building.reachedModerateDamage = true;
+                    addLogEntry(`${player.name}的${BUILDINGS[buildingType].name}中度受损，收益减少25%！`);
+                }
+                
+                // 如果从严重损伤恢复到中度损伤，重置严重损伤标记并添加日志
+                if (building.reachedCriticalDamage) {
+                    building.reachedCriticalDamage = false;
+                    addLogEntry(`${player.name}的${BUILDINGS[buildingType].name}状态有所改善，收益减少从50%降低到25%。`);
+                }
+            } else {
+                // 如果从损伤状态恢复，添加日志
+                if (building.reachedModerateDamage || building.reachedCriticalDamage) {
+                    building.reachedModerateDamage = false;
+                    building.reachedCriticalDamage = false;
+                    addLogEntry(`${player.name}的${BUILDINGS[buildingType].name}已修复到良好状态，恢复全额收益。`);
+                }
+            }
+            
+            // 应用新的收益减少
+            if (newIncomeReduction > 0) {
+                player.income -= newIncomeReduction;
+                building.damagedIncomeReduction = newIncomeReduction;
+            }
+        }
+
+        // 为建筑分配唯一ID
+        function generateBuildingId() {
+            return Date.now() + Math.floor(Math.random() * 10000);
+        }
+
+        // 启动军厂生产
+        function startFactoryProduction(tile, unitType) {
+            const buildingType = tile.building.type;
+            const player = gameState.players[tile.ownerId];
+            
+            // 检查是否已达到本轮步兵生产上限
+            if (unitType === 'infantry' && gameState.factoryProduction.infantryProducedThisRound >= gameState.factoryProduction.infantryProductionLimit) {
+                showNotification("本轮步兵生产已达上限！", "error");
+                return false;
+            }
+            
+            // 确保建筑有唯一ID
+            if (!tile.building.id) {
+                tile.building.id = generateBuildingId();
+            }
+            
+            // 检查该建筑是否已在生产
+            const existingProduction = gameState.factoryProduction.productionQueues.find(q => q.buildingId === tile.building.id);
+            if (existingProduction) {
+                showNotification("该工厂已在生产中！", "error");
+                return false;
+            }
+            
+            // 创建生产队列项
+            const productionItem = {
+                buildingId: tile.building.id,
+                buildingType: buildingType,
+                unitType: unitType,
+                progress: 0,
+                tileX: tile.x,
+                tileY: tile.y,
+                requiresMaintenance: false
+            };
+            
+            // 根据工厂类型设置进度
+            if (buildingType === 'armoryFactory') {
+                productionItem.totalTurns = 2; // 军厂需要2回合生产一个步兵
+            } else if (buildingType === 'bigArmoryFactory') {
+                productionItem.totalTurns = 4; // 大军厂需要4回合生产一个步兵
+            }
+            
+            // 添加到生产队列
+            gameState.factoryProduction.productionQueues.push(productionItem);
+            
+            // 如果是军厂生产步兵，增加本轮计数
+            if (buildingType === 'armoryFactory' && unitType === 'infantry') {
+                gameState.factoryProduction.infantryProducedThisRound++;
+            }
+            
+            // 添加日志
+            const factoryName = BUILDINGS[buildingType].name;
+            const unitName = UNITS[unitType].name;
+            addLogEntry(`${player.name}的${factoryName}开始生产${unitName}，预计${productionItem.totalTurns}回合后完成。`);
+            showNotification(`开始生产${unitName}！`);
+            
+            return true;
+        }
+
+        // 处理工厂生产进度
+        function processFactoryProduction() {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            const completedProductions = [];
+            
+            // 检查军厂，添加生产队列
+            gameState.map.forEach(tile => {
+                if (tile.ownerId === currentPlayer.id && tile.building) {
+                    // 军厂生产步兵
+                    if (tile.building.type === 'armoryFactory' && 
+                        gameState.factoryProduction.infantryProducedThisRound < gameState.factoryProduction.infantryProductionLimit) {
+                        
+                        // 检查是否已经在生产队列中
+                        const alreadyInQueue = gameState.factoryProduction.productionQueues.some(
+                            item => item.buildingId === tile.building.id
+                        );
+                        
+                        if (!alreadyInQueue) {
+                            // 添加到生产队列
+                            gameState.factoryProduction.productionQueues.push({
+                                buildingId: tile.building.id,
+                                buildingType: 'armoryFactory',
+                                unitType: 'infantry',
+                                progress: 0,
+                                totalTurns: 2, // 2回合生产一个步兵
+                                tileX: tile.x,
+                                tileY: tile.y
+                            });
+                            
+                            gameState.factoryProduction.infantryProducedThisRound++;
+                            addLogEntry(`${currentPlayer.name}的军厂开始生产步兵。`);
+                        }
+                    }
+                    // 大军厂生产步兵 - 没有数量限制
+                    else if (tile.building.type === 'bigArmoryFactory') {
+                        // 检查是否已经在生产队列中
+                        const alreadyInQueue = gameState.factoryProduction.productionQueues.some(
+                            item => item.buildingId === tile.building.id
+                        );
+                        
+                        if (!alreadyInQueue) {
+                            // 添加到生产队列
+                            gameState.factoryProduction.productionQueues.push({
+                                buildingId: tile.building.id,
+                                buildingType: 'bigArmoryFactory',
+                                unitType: 'infantry',
+                                progress: 0,
+                                totalTurns: 4, // 4回合生产一个步兵
+                                tileX: tile.x,
+                                tileY: tile.y
+                            });
+                            
+                            addLogEntry(`${currentPlayer.name}的大军厂开始生产步兵。`);
+                        }
+                    }
+                    // 军营生产骑兵
+                    else if (tile.building.type === 'barracks' && 
+                        gameState.factoryProduction.cavalryProducedThisRound < gameState.factoryProduction.cavalryProductionLimit) {
+                        
+                        // 检查是否已经在生产队列中
+                        const alreadyInQueue = gameState.factoryProduction.productionQueues.some(
+                            item => item.buildingId === tile.building.id
+                        );
+                        
+                        if (!alreadyInQueue) {
+                            // 添加到生产队列
+                            gameState.factoryProduction.productionQueues.push({
+                                buildingId: tile.building.id,
+                                buildingType: 'barracks',
+                                unitType: 'cavalry',
+                                progress: 0,
+                                totalTurns: 2, // 2回合生产一个骑兵
+                                tileX: tile.x,
+                                tileY: tile.y
+                            });
+                            
+                            gameState.factoryProduction.cavalryProducedThisRound++;
+                            addLogEntry(`${currentPlayer.name}的军营开始生产骑兵。`);
+                        }
+                    }
+                }
+            });
+            
+            // 更新所有生产进度
+            gameState.factoryProduction.productionQueues.forEach(item => {
+                // 只处理当前玩家的生产队列
+                const tile = gameState.map.find(t => t.x === item.tileX && t.y === item.tileY);
+                if (tile && tile.ownerId === currentPlayer.id) {
+                    item.progress++;
+                    
+                    // 检查是否完成
+                    if (item.progress >= item.totalTurns) {
+                        completedProductions.push(item);
+                    }
+                }
+            });
+            
+            // 处理完成的生产
+            completedProductions.forEach(item => {
+                const tile = gameState.map.find(t => t.x === item.tileX && t.y === item.tileY);
+                if (tile && tile.building) {
+                    // 寻找周围可放置单位的格子
+                    const placementTile = findNearbyEmptyTile(item.tileX, item.tileY);
+                    
+                    if (placementTile) {
+                        // 创建单位
+                        const newUnit = {
+                            id: Date.now() + Math.floor(Math.random() * 10000),
+                            type: item.unitType,
+                            x: placementTile.x,
+                            y: placementTile.y,
+                            health: UNITS[item.unitType].health,
+                            hasMoved: true, // 新生产的单位本回合不能移动
+                            hasAttacked: true, // 新生产的单位本回合不能攻击
+                            // 大军厂生产的步兵和军营生产的骑兵不需要维护费
+                            requiresMaintenance: item.buildingType === 'bigArmoryFactory',
+                            ownerId: currentPlayer.id // 明确设置单位所有者ID
+                        };
+                        
+                        // 更新地图和玩家单位列表
+                        placementTile.unit = newUnit;
+                        currentPlayer.units.push(newUnit);
+                        
+                        // 如果需要维护费，增加玩家的军事维护费
+                        if (newUnit.requiresMaintenance) {
+                            currentPlayer.militaryMaintenance += UNITS[item.unitType].maintenance;
+                        }
+                        
+                        // 添加日志
+                        const factoryName = BUILDINGS[item.buildingType].name;
+                        const unitName = UNITS[item.unitType].name;
+                        addLogEntry(`${currentPlayer.name}的${factoryName}生产的${unitName}已完成并部署。`);
+                    } else {
+                        // 没有空间放置单位
+                        addLogEntry(`${currentPlayer.name}的工厂生产的单位因周围没有空间而无法部署。`);
+                    }
+                    
+                    // 从生产队列中移除
+                    const index = gameState.factoryProduction.productionQueues.findIndex(q => 
+                        q.buildingId === item.buildingId && q.unitType === item.unitType
+                    );
+                    if (index !== -1) {
+                        gameState.factoryProduction.productionQueues.splice(index, 1);
+                    }
+                }
+            });
+        }
+
+        // 寻找附近空的格子来放置单位
+        function findNearbyEmptyTile(x, y) {
+            const directions = [
+                {dx: 0, dy: -1}, // 上
+                {dx: 1, dy: 0},  // 右
+                {dx: 0, dy: 1},  // 下
+                {dx: -1, dy: 0}, // 左
+                {dx: 1, dy: -1}, // 右上
+                {dx: 1, dy: 1},  // 右下
+                {dx: -1, dy: 1}, // 左下
+                {dx: -1, dy: -1} // 左上
+            ];
+            
+            // 检查周围的8个方向
+            for (const dir of directions) {
+                const nx = x + dir.dx;
+                const ny = y + dir.dy;
+                
+                // 确保在地图范围内
+                if (nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT) {
+                    const tileIndex = ny * GRID_WIDTH + nx;
+                    const tile = gameState.map[tileIndex];
+                    
+                    // 检查该格子是否可以放置单位
+                    if (tile.ownerId === gameState.currentPlayerIndex && !tile.unit && tile.terrain !== 'water') {
+                        return tile;
+                    }
+                }
+            }
+            
+            return null; // 没有找到合适的格子
+        }
+
+        // 处理领土控制系统
+        function processTerritoryControl() {
+            // 遍历所有格子
+            gameState.map.forEach(tile => {
+                // 如果格子上有单位
+                if (tile.unit && tile.ownerId !== null) {
+                    const unitOwnerId = tile.unit.ownerId !== undefined ? tile.unit.ownerId : null;
+                    
+                    // 如果单位所有者与领土所有者不同
+                    if (unitOwnerId !== null && unitOwnerId !== tile.ownerId) {
+                        // 降低领土控制值
+                        tile.territoryControl -= gameState.territoryControlLossPerTurn;
+                        
+                        // 如果控制值降至0，领土变为中立
+                        if (tile.territoryControl <= 0) {
+                            const formerOwner = gameState.players[tile.ownerId];
+                            const unitOwner = gameState.players[unitOwnerId];
+                            
+                            // 记录领土变化
+                            addLogEntry(`${unitOwner.name}的单位侵占了${formerOwner.name}的领土，(${tile.x},${tile.y})格子变为中立。`);
+                            
+                            // 领土变为中立
+                            tile.ownerId = null;
+                            tile.territoryControl = gameState.territoryControlMax / 2; // 设为一半的控制值
+                            
+                            // 如果有建筑，销毁建筑（可选，取决于游戏设计）
+                            if (tile.building) {
+                                const buildingName = tile.building.type === 'capital' ? 
+                                    '首都' : (BUILDINGS[tile.building.type]?.name || tile.building.name);
+                                
+                                addLogEntry(`${formerOwner.name}的${buildingName}被摧毁了！`);
+                                
+                                // 如果是有收入的建筑，减少玩家收入
+                                if (BUILDINGS[tile.building.type] && BUILDINGS[tile.building.type].income) {
+                                    formerOwner.income -= BUILDINGS[tile.building.type].income;
+                                }
+                                
+                                // 清除建筑
+                                tile.building = null;
+                            }
+                        }
+                    }
+                }
+                // 如果格子是中立的，并且有玩家单位停留
+                else if (tile.ownerId === null && tile.unit) {
+                    const unitOwnerId = tile.unit.ownerId !== undefined ? tile.unit.ownerId : null;
+                    
+                    if (unitOwnerId !== null) {
+                        // 增加单位所有者对该格子的控制
+                        tile.territoryControl += gameState.territoryControlLossPerTurn;
+                        
+                        // 如果控制值达到最大值，领土归属该玩家
+                        if (tile.territoryControl >= gameState.territoryControlMax) {
+                            const unitOwner = gameState.players[unitOwnerId];
+                            
+                            // 记录领土变化
+                            addLogEntry(`${unitOwner.name}占领了位于(${tile.x},${tile.y})的中立领土。`);
+                            
+                            // 领土归属该玩家
+                            tile.ownerId = unitOwnerId;
+                            tile.territoryControl = gameState.territoryControlMax;
+                        }
+                    }
+                }
+            });
+        }
+
+        // 添加首都
+        function addCapitals() {
+            const player1 = gameState.players[0];
+            const player2 = gameState.players[1];
+            
+            // 获取适合首都的位置
+            const player1CapitalPos = { x: Math.floor(GRID_WIDTH / 4), y: Math.floor(GRID_HEIGHT / 2) };
+            const player2CapitalPos = { x: Math.floor(GRID_WIDTH * 3 / 4), y: Math.floor(GRID_HEIGHT / 2) };
+            
+            // 设置首都和周围地形
+            const player1CapitalTile = gameState.map.find(tile => tile.x === player1CapitalPos.x && tile.y === player1CapitalPos.y);
+            player1CapitalTile.ownerId = player1.id;
+            player1CapitalTile.controlValue = 100; // 完全控制
+            player1CapitalTile.building = { 
+                type: 'capital', 
+                name: `${player1.name}的首都`,
+                health: BUILDINGS.capital.maxHealth // 首都的生命值
+            };
+            
+            const player2CapitalTile = gameState.map.find(tile => tile.x === player2CapitalPos.x && tile.y === player2CapitalPos.y);
+            player2CapitalTile.ownerId = player2.id;
+            player2CapitalTile.controlValue = 100; // 完全控制
+            player2CapitalTile.building = { 
+                type: 'capital', 
+                name: `${player2.name}的首都`,
+                health: BUILDINGS.capital.maxHealth // 首都的生命值
+            };
+            
+            // 为首都周围的一圈格子设置领土
+            for (let dx = -2; dx <= 2; dx++) {
+                for (let dy = -2; dy <= 2; dy++) {
+                    if (dx === 0 && dy === 0) continue; // 跳过首都格子
+                    
+                    // 玩家1的周边领土
+                    const x1 = player1CapitalPos.x + dx;
+                    const y1 = player1CapitalPos.y + dy;
+                    if (x1 >= 0 && x1 < GRID_WIDTH && y1 >= 0 && y1 < GRID_HEIGHT) {
+                        const tile = gameState.map.find(tile => tile.x === x1 && tile.y === y1);
+                        tile.ownerId = player1.id;
+                        tile.controlValue = 100; // 完全控制
+                    }
+                    
+                    // 玩家2的周边领土
+                    const x2 = player2CapitalPos.x + dx;
+                    const y2 = player2CapitalPos.y + dy;
+                    if (x2 >= 0 && x2 < GRID_WIDTH && y2 >= 0 && y2 < GRID_HEIGHT) {
+                        const tile = gameState.map.find(tile => tile.x === x2 && tile.y === y2);
+                        tile.ownerId = player2.id;
+                        tile.controlValue = 100; // 完全控制
+                    }
+                }
+            }
+            
+            // 如果有额外的玩家，为他们添加首都
+            for (let i = 2; i < gameState.players.length; i++) {
+                const player = gameState.players[i];
+                // 随机位置
+                let capitalX, capitalY;
+                do {
+                    capitalX = Math.floor(Math.random() * GRID_WIDTH);
+                    capitalY = Math.floor(Math.random() * GRID_HEIGHT);
+                    // 确保与其他首都保持一定距离
+                } while (Math.abs(capitalX - player1CapitalPos.x) < 5 && Math.abs(capitalY - player1CapitalPos.y) < 5 ||
+                         Math.abs(capitalX - player2CapitalPos.x) < 5 && Math.abs(capitalY - player2CapitalPos.y) < 5);
+                
+                const capitalTile = gameState.map.find(tile => tile.x === capitalX && tile.y === capitalY);
+                capitalTile.ownerId = player.id;
+                capitalTile.controlValue = 100; // 完全控制
+                capitalTile.building = { 
+                    type: 'capital', 
+                    name: `${player.name}的首都`,
+                    health: BUILDINGS.capital.maxHealth // 首都的生命值
+                };
+                
+                // 为首都周围的一圈格子设置领土
+                for (let dx = -2; dx <= 2; dx++) {
+                    for (let dy = -2; dy <= 2; dy++) {
+                        if (dx === 0 && dy === 0) continue; // 跳过首都格子
+                        
+                        const x = capitalX + dx;
+                        const y = capitalY + dy;
+                        if (x >= 0 && x < GRID_WIDTH && y >= 0 && y < GRID_HEIGHT) {
+                            const tile = gameState.map.find(tile => tile.x === x && tile.y === y);
+                            tile.ownerId = player.id;
+                            tile.controlValue = 100; // 完全控制
+                        }
+                    }
+                }
+            }
+        }
+
+        // 在地图上放置建筑
+        function placeBuildingOnTile(buildingType, tile) {
+            const player = gameState.players[gameState.currentPlayerIndex];
+            
+            // 添加建筑
+            let health = 200; // 默认健康值
+            if (BUILDINGS[buildingType] && BUILDINGS[buildingType].maxHealth) {
+                health = BUILDINGS[buildingType].maxHealth;
+            }
+            
+            // 设置建筑
+            tile.building = {
+                type: buildingType,
+                health: health
+            };
+            
+            // 更新玩家收入
+            if (BUILDINGS[buildingType] && BUILDINGS[buildingType].income) {
+                player.income += BUILDINGS[buildingType].income;
+            }
+            
+            // 添加日志
+            const buildingName = BUILDINGS[buildingType].name;
+            addLogEntry(`${player.name}建造了${buildingName}`);
+            
+            // 重置建筑模式
+            gameState.buildMode = false;
+            gameState.selectedBuildingType = null;
+            
+            // 清空建筑预览
+            document.getElementById('building-preview').style.display = 'none';
+            
+            // 更新UI
+            updateUI();
+            drawMap();
+        }
+
+        // 处理建筑物健康值恢复
+        function healBuildings(playerId) {
+            gameState.map.forEach(tile => {
+                if (tile.ownerId === playerId && tile.building && tile.building.health !== undefined) {
+                    const buildingType = tile.building.type;
+                    const maxHealth = buildingType === 'capital' ? BUILDINGS.capital.maxHealth : (BUILDINGS[buildingType] ? BUILDINGS[buildingType].maxHealth : 200);
+                    
+                    // 如果健康值不是满的，则恢复一定量的健康值
+                    if (tile.building.health < maxHealth) {
+                        // 计算恢复量 (每回合恢复最大健康值的5%)
+                        const healAmount = Math.ceil(maxHealth * 0.05);
+                        
+                        // 应用恢复量，但不超过最大健康值
+                        tile.building.health = Math.min(tile.building.health + healAmount, maxHealth);
+                        
+                        // 如果恢复到满，添加日志
+                        if (tile.building.health === maxHealth) {
+                            const buildingName = buildingType === 'capital' ? '首都' : BUILDINGS[buildingType].name;
+                            addLogEntry(`${gameState.players[playerId].name}的${buildingName}已完全恢复。`);
+                        }
+                    }
+                }
+            });
+        }
+
+        // 建筑物信息显示
+        function updateSelectedTileInfo(tile) {
+            const infoPanel = document.getElementById('tile-info');
+            
+            // ... existing code ...
+            
+            if (tile.building) {
+                const buildingType = tile.building.type;
+                let buildingName;
+                
+                if (buildingType === 'capital') {
+                    buildingName = '首都';
+                } else if (BUILDINGS[buildingType]) {
+                    buildingName = BUILDINGS[buildingType].name;
+                } else {
+                    buildingName = buildingType;
+                }
+                
+                // 获取建筑健康信息
+                let healthInfo = '';
+                if (tile.building.health !== undefined) {
+                    const maxHealth = buildingType === 'capital' ? BUILDINGS.capital.maxHealth : (BUILDINGS[buildingType] ? BUILDINGS[buildingType].maxHealth : 200);
+                    const healthPercent = Math.floor((tile.building.health / maxHealth) * 100);
+                    
+                    // 根据健康值设置颜色
+                    let healthColor = '#2ecc71'; // 绿色: 健康
+                    let healthStatus = '健康';
+                    
+                    if (healthPercent < 25) {
+                        healthColor = '#e74c3c'; // 红色: 危险
+                        healthStatus = '严重受损 (收益-50%)';
+                    } else if (healthPercent < 50) {
+                        healthColor = '#f39c12'; // 黄色: 警告
+                        healthStatus = '受损 (收益-25%)';
+                    }
+                    
+                    healthInfo = `
+                        <div style="margin-top: 5px;">
+                            <strong>健康值:</strong> ${tile.building.health}/${maxHealth} (${healthPercent}%)
+                            <div style="width: 100%; background-color: #ddd; height: 8px; margin-top: 3px;">
+                                <div style="width: ${healthPercent}%; background-color: ${healthColor}; height: 8px;"></div>
+                            </div>
+                            <div style="font-size: 12px; color: ${healthColor}; margin-top: 2px;">${healthStatus}</div>
+                        </div>
+                    `;
+                }
+                
+                // ... existing code ...
+            }
+            
+            // ... existing code ...
+        }
+
+        // 添加新函数：高亮显示可修理的建筑
+        function highlightRepairableBuildings(playerId) {
+            const ctx = document.getElementById('game-canvas').getContext('2d');
+            
+            // 重新绘制地图
+            drawMap();
+            
+            // 遍历地图，查找该玩家拥有的受损建筑
+            gameState.map.forEach(tile => {
+                if (tile.ownerId === playerId && tile.building && tile.building.health) {
+                    const buildingType = tile.building.type;
+                    const maxHealth = buildingType === 'capital' ? BUILDINGS.capital.maxHealth : BUILDINGS[buildingType].maxHealth;
+                    
+                    // 如果建筑受损，高亮显示
+                    if (tile.building.health < maxHealth) {
+                        const x = tile.x * GRID_SIZE;
+                        const y = tile.y * GRID_SIZE;
+                        
+                        // 绘制高亮边框
+                        ctx.strokeStyle = '#00ff00'; // 绿色边框
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(x, y, GRID_SIZE, GRID_SIZE);
+                        
+                        // 添加修理图标
+                        ctx.fillStyle = '#00ff00';
+                        ctx.beginPath();
+                        ctx.arc(x + GRID_SIZE - 8, y + 8, 5, 0, Math.PI * 2);
+                        ctx.fill();
+                        ctx.strokeStyle = '#ffffff';
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(x + GRID_SIZE - 10, y + 8);
+                        ctx.lineTo(x + GRID_SIZE - 6, y + 8);
+                        ctx.stroke();
+                        ctx.beginPath();
+                        ctx.moveTo(x + GRID_SIZE - 8, y + 6);
+                        ctx.lineTo(x + GRID_SIZE - 8, y + 10);
+                        ctx.stroke();
+                    }
+                }
+            });
+        }
+
+        // 添加新函数：修理建筑物
+        function repairBuilding(repairShopTile, targetTile) {
+            const repairShop = repairShopTile.building;
+            const targetBuilding = targetTile.building;
+            const player = gameState.players[repairShopTile.ownerId];
+            
+            if (!targetBuilding) {
+                showNotification("没有建筑可以修理！", "error");
+                return false;
+            }
+            
+            const buildingType = targetBuilding.type;
+            const maxHealth = buildingType === 'capital' ? BUILDINGS.capital.maxHealth : BUILDINGS[buildingType].maxHealth;
+            
+            if (targetBuilding.health >= maxHealth) {
+                showNotification("该建筑已处于满健康状态！", "info");
+                return false;
+            }
+            
+            // 计算修理费用 - 根据损失的健康值比例计算
+            const healthPercentLost = 1 - (targetBuilding.health / maxHealth);
+            const repairCost = Math.ceil(BUILDINGS[buildingType].cost * 0.2 * healthPercentLost);
+            
+            if (player.gold < repairCost) {
+                showNotification(`金币不足！修理需要${repairCost}金币。`, "error");
+                return false;
+            }
+            
+            // 扣除金币
+            player.gold -= repairCost;
+            
+            // 修复建筑
+            const oldHealth = targetBuilding.health;
+            targetBuilding.health = maxHealth;
+            
+            // 更新建筑损伤状态对收益的影响
+            updateBuildingDamageEffect(targetTile, player);
+            
+            // 添加日志
+            const buildingName = buildingType === 'capital' ? '首都' : BUILDINGS[buildingType].name;
+            addLogEntry(`${player.name}花费${repairCost}金币修复了${buildingName}，健康值从${oldHealth}恢复到${maxHealth}。`);
+            
+            // 显示通知
+            showNotification(`${buildingName}已修复！`, "success");
+            
+            return true;
+        }
+
+        // 初始化游戏状态时添加修理模式标志
+        function initGameState(playerCount) {
+            // ... existing initialization code ...
+            
+            gameState = {
+                map: [],
+                players: [],
+                currentPlayerIndex: 0,
+                selectedTile: null,
+                buildMode: false,
+                selectedBuildingType: null,
+                buildingInProgress: null,
+                moveMode: false,
+                attackMode: false,
+                repairMode: false, // 添加修理模式标志
+                recruitMode: false,
+                selectedUnitType: null,
+                // ... other properties ...
+            };
+            
+            // ... rest of initialization code ...
+        }
+
+        function buildBuilding(x, y, buildingType) {
+            const tileIndex = y * GRID_WIDTH + x;
+            const tile = gameState.map[tileIndex];
+            const buildingCost = BUILDINGS[buildingType].cost;
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            
+            // 检查是否有足够的金币
+            if (currentPlayer.gold < buildingCost) {
+                showNotification("金币不足！", "error");
+                return false;
+            }
+            
+            // 检查是否是军厂或大军厂，增加计数
+            if (buildingType === 'armoryFactory') {
+                gameState.factoryProduction.armoryFactoryBuiltThisRound++;
+            } else if (buildingType === 'bigArmoryFactory') {
+                gameState.factoryProduction.bigArmoryFactoryBuiltThisRound++;
+            } else if (buildingType === 'barracks') {
+                gameState.factoryProduction.barracksBuiltThisRound++;
+            }
+            
+            // 扣除金币
+            currentPlayer.gold -= buildingCost;
+            
+            // 建立建筑
+            tile.building = {
+                type: buildingType,
+                name: BUILDINGS[buildingType].name,
+                income: BUILDINGS[buildingType].income,
+                health: BUILDINGS[buildingType].maxHealth,
+                id: generateBuildingId()
+            };
+            
+            // 计算收入影响
+            if (BUILDINGS[buildingType].income > 0) {
+                currentPlayer.income += BUILDINGS[buildingType].income;
+            } else {
+                // 负收入视为维护费
+                currentPlayer.militaryMaintenance += Math.abs(BUILDINGS[buildingType].income);
+            }
+            
+            // 添加到玩家建筑列表
+            currentPlayer.buildings.push(tile.building);
+            
+            // 添加游戏日志
+            addLogEntry(`${currentPlayer.name}在坐标(${x}, ${y})建造了${BUILDINGS[buildingType].name}，花费${buildingCost}金币。`);
+            
+            // 显示通知
+            showNotification(`建造${BUILDINGS[buildingType].name}成功！`);
+            
+            return true;
+        }
+
+        // 处理医院治疗单位
+        function processHospitalHealing() {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            const healAmount = 20; // 每次治疗恢复的生命值
+            
+            // 查找当前玩家所有的医院和大医院
+            const hospitals = [];
+            const bigHospitals = [];
+            
+            gameState.map.forEach(tile => {
+                if (tile.ownerId === currentPlayer.id && tile.building) {
+                    if (tile.building.type === 'hospital') {
+                        hospitals.push(tile);
+                    } else if (tile.building.type === 'bigHospital') {
+                        bigHospitals.push(tile);
+                    }
+                }
+            });
+            
+            // 处理普通医院治疗（每个医院治疗1个单位）
+            hospitals.forEach(hospitalTile => {
+                // 寻找附近的受伤单位（优先治疗伤势最重的）
+                const injuredUnit = findNearbyInjuredUnit(hospitalTile.x, hospitalTile.y);
+                
+                if (injuredUnit) {
+                    healUnit(injuredUnit, healAmount);
+                    addLogEntry(`${currentPlayer.name}的医院治疗了一个${UNITS[injuredUnit.type].name}，恢复了${healAmount}点生命值。`);
+                }
+            });
+            
+            // 处理大医院治疗（每个大医院治疗3个单位）
+            bigHospitals.forEach(hospitalTile => {
+                let healsRemaining = 3; // 大医院每回合可以治疗3个单位
+                
+                while (healsRemaining > 0) {
+                    // 寻找附近的受伤单位
+                    const injuredUnit = findNearbyInjuredUnit(hospitalTile.x, hospitalTile.y);
+                    
+                    if (injuredUnit) {
+                        healUnit(injuredUnit, healAmount);
+                        addLogEntry(`${currentPlayer.name}的大医院治疗了一个${UNITS[injuredUnit.type].name}，恢复了${healAmount}点生命值。`);
+                        healsRemaining--;
+                    } else {
+                        // 没有更多受伤单位了
+                        break;
+                    }
+                }
+            });
+        }
+
+        // 寻找附近受伤的单位（优先找生命值百分比最低的）
+        function findNearbyInjuredUnit(x, y, range = 3) {
+            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+            let injuredUnits = [];
+            
+            // 查找范围内的所有受伤单位
+            for (let dy = -range; dy <= range; dy++) {
+                for (let dx = -range; dx <= range; dx++) {
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    
+                    // 确保在地图范围内
+                    if (nx >= 0 && nx < GRID_WIDTH && ny >= 0 && ny < GRID_HEIGHT) {
+                        const tileIndex = ny * GRID_WIDTH + nx;
+                        const tile = gameState.map[tileIndex];
+                        
+                        // 检查是否是当前玩家的受伤单位
+                        if (tile.unit && 
+                            tile.unit.ownerId === currentPlayer.id && 
+                            tile.unit.health < UNITS[tile.unit.type].health) {
+                            
+                            // 计算生命值百分比
+                            const healthPercent = tile.unit.health / UNITS[tile.unit.type].health;
+                            
+                            injuredUnits.push({
+                                unit: tile.unit,
+                                healthPercent: healthPercent,
+                                tileIndex: tileIndex
+                            });
+                        }
+                    }
+                }
+            }
+            
+            // 按生命值百分比升序排序（优先治疗生命值百分比最低的）
+            injuredUnits.sort((a, b) => a.healthPercent - b.healthPercent);
+            
+            // 返回生命值百分比最低的单位
+            return injuredUnits.length > 0 ? injuredUnits[0].unit : null;
+        }
+
+        // 治疗单位
+        function healUnit(unit, amount) {
+            const maxHealth = UNITS[unit.type].health;
+            
+            // 增加生命值但不超过最大值
+            unit.health = Math.min(unit.health + amount, maxHealth);
+            
+            // 更新地图上的单位状态
+            const tileIndex = unit.y * GRID_WIDTH + unit.x;
+            if (gameState.map[tileIndex].unit) {
+                gameState.map[tileIndex].unit.health = unit.health;
+            }
+        }
+    </script>
+</body>
+</html>

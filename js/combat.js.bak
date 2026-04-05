@@ -1,0 +1,494 @@
+// 战斗系统相关功能
+
+// 移动单位
+function moveUnit(fromX, fromY, toX, toY) {
+    const fromTileIndex = fromY * GRID_WIDTH + fromX;
+    const toTileIndex = toY * GRID_WIDTH + toX;
+    
+    // 获取源格子和目标格子
+    const fromTile = gameState.map[fromTileIndex];
+    const toTile = gameState.map[toTileIndex];
+    
+    // 检查源格子是否有单位
+    if (!fromTile.unit) {
+        showNotification('没有单位可以移动！', 'error');
+        return false;
+    }
+    
+    // 检查目标格子是否已经有单位
+    if (toTile.unit) {
+        showNotification('目标位置已经有单位！', 'error');
+        return false;
+    }
+    
+    const unit = fromTile.unit;
+    const unitType = unit.type;
+    const moveRange = UNITS[unitType].moveRange;
+    
+    // 计算曼哈顿距离
+    const distance = Math.abs(fromX - toX) + Math.abs(fromY - toY);
+    
+    // 检查是否在移动范围内
+    if (distance > moveRange) {
+        showNotification('超出移动范围！', 'error');
+        return false;
+    }
+    
+    // 检查非空中单位是否可以通过地形
+    if (unitType !== 'air' && toTile.terrain === 'water') {
+        showNotification('该单位不能在水上移动！', 'error');
+        return false;
+    }
+    
+    // 设置单位已经行动过的标记
+    unit.hasActed = true;
+    
+    // 更新单位位置
+    unit.x = toX;
+    unit.y = toY;
+    
+    // 将单位从源格子移动到目标格子
+    toTile.unit = unit;
+    fromTile.unit = null;
+    
+    // 更新游戏日志
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    addLogEntry(`${currentPlayer.name}的${UNITS[unitType].name}从(${fromX}, ${fromY})移动到(${toX}, ${toY})。`);
+    
+    return true;
+}
+
+// 攻击目标
+function attackTarget(attackerX, attackerY, targetX, targetY) {
+    const attackerTileIndex = attackerY * GRID_WIDTH + attackerX;
+    const targetTileIndex = targetY * GRID_WIDTH + targetX;
+    
+    // 获取攻击者和目标格子
+    const attackerTile = gameState.map[attackerTileIndex];
+    const targetTile = gameState.map[targetTileIndex];
+    
+    // 检查攻击者格子是否有单位
+    if (!attackerTile.unit) {
+        showNotification('没有单位可以攻击！', 'error');
+        return false;
+    }
+    
+    const attacker = attackerTile.unit;
+    const attackerType = attacker.type;
+    const attackRange = UNITS[attackerType].attackRange;
+    
+    // 计算曼哈顿距离
+    const distance = Math.abs(attackerX - targetX) + Math.abs(attackerY - targetY);
+    
+    // 检查是否在攻击范围内
+    if (distance > attackRange) {
+        showNotification('超出攻击范围！', 'error');
+        return false;
+    }
+    
+    // 检查攻击者和目标是否属于同一玩家
+    const attackerOwnerId = attacker.ownerId;
+    const targetOwnerId = targetTile.ownerId;
+    
+    if (targetOwnerId === attackerOwnerId) {
+        showNotification('不能攻击自己的单位或建筑！', 'error');
+        return false;
+    }
+    
+    // 设置单位已经行动过的标记
+    attacker.hasActed = true;
+    
+    // 计算攻击伤害
+    let damage, defender;
+    
+    if (targetTile.unit) {
+        // 对敌方单位造成伤害
+        defender = targetTile.unit;
+        damage = calculateDamage(attacker, defender);
+        
+        // 应用伤害
+        defender.health -= damage;
+        
+        // 检查单位是否被摧毁
+        if (defender.health <= 0) {
+            // 移除被摧毁的单位
+            targetTile.unit = null;
+            
+            // 更新游戏日志
+            const attackerPlayer = gameState.players[attackerOwnerId];
+            const defenderPlayer = gameState.players[defender.ownerId];
+            
+            addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}摧毁了${defenderPlayer.name}的${UNITS[defender.type].name}，造成了${damage}点伤害。`);
+            
+            showNotification(`敌方${UNITS[defender.type].name}被摧毁！`, 'success');
+        } else {
+            // 更新游戏日志
+            const attackerPlayer = gameState.players[attackerOwnerId];
+            const defenderPlayer = gameState.players[defender.ownerId];
+            
+            addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}攻击了${defenderPlayer.name}的${UNITS[defender.type].name}，造成了${damage}点伤害（剩余生命：${defender.health}）。`);
+            
+            showNotification(`对敌方${UNITS[defender.type].name}造成${damage}点伤害！`, 'info');
+        }
+    } else if (targetTile.building) {
+        // 对敌方建筑造成伤害
+        damage = calculateBuildingDamage(attacker, targetTile.building);
+        
+        // 应用伤害
+        targetTile.building.health -= damage;
+        
+        // 检查建筑是否被摧毁
+        if (targetTile.building.health <= 0) {
+            const buildingType = targetTile.building.type;
+            const buildingName = targetTile.building.name;
+            
+            // 检查是否是首都
+            if (buildingType === 'capital') {
+                // 移除玩家所有建筑和单位
+                destroyAllPlayerAssets(targetOwnerId);
+                
+                // 更新游戏状态
+                checkGameOver();
+            }
+            
+            // 移除被摧毁的建筑
+            targetTile.building = null;
+            
+            // 更新游戏日志
+            const attackerPlayer = gameState.players[attackerOwnerId];
+            const defenderPlayer = gameState.players[targetOwnerId];
+            
+            addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}摧毁了${defenderPlayer.name}的${buildingName}，造成了${damage}点伤害。`);
+            
+            showNotification(`敌方${buildingName}被摧毁！`, 'success');
+        } else {
+            // 更新游戏日志
+            const attackerPlayer = gameState.players[attackerOwnerId];
+            const defenderPlayer = gameState.players[targetOwnerId];
+            const buildingName = targetTile.building.name;
+            
+            addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}攻击了${defenderPlayer.name}的${buildingName}，造成了${damage}点伤害（剩余生命：${targetTile.building.health}）。`);
+            
+            showNotification(`对敌方${buildingName}造成${damage}点伤害！`, 'info');
+            
+            // 更新建筑损伤状态对收益的影响
+            updateBuildingDamageEffect(targetTile, gameState.players[targetOwnerId]);
+        }
+    } else {
+        showNotification('没有目标可以攻击！', 'error');
+        return false;
+    }
+    
+    return true;
+}
+
+// 计算单位对单位的伤害
+function calculateDamage(attacker, defender) {
+    const attackerType = attacker.type;
+    const defenderType = defender.type;
+    
+    // 获取基础攻击力和防御力
+    const baseAttack = UNITS[attackerType].attack;
+    const baseDefense = UNITS[defenderType].defense;
+    
+    // 计算随机因素 (0.8到1.2之间的随机值)
+    const randomFactor = 0.8 + Math.random() * 0.4;
+    
+    // 计算伤害
+    let damage = Math.max(5, Math.round((baseAttack - baseDefense / 2) * randomFactor));
+    
+    // 特殊单位类型的伤害修正
+    if (attackerType === 'artillery' && defenderType !== 'air') {
+        damage *= 1.5; // 火炮对地面单位伤害增加50%
+    } else if (attackerType === 'helicopter' && defenderType === 'tank') {
+        damage *= 1.3; // 直升机对坦克伤害增加30%
+    }
+    
+    return Math.round(damage);
+}
+
+// 计算单位对建筑的伤害
+function calculateBuildingDamage(attacker, building) {
+    const attackerType = attacker.type;
+    
+    // 获取基础攻击力
+    const baseAttack = UNITS[attackerType].attack;
+    
+    // 计算随机因素 (0.9到1.1之间的随机值)
+    const randomFactor = 0.9 + Math.random() * 0.2;
+    
+    // 计算伤害，建筑没有防御值，但伤害减少25%
+    let damage = Math.max(5, Math.round(baseAttack * 0.75 * randomFactor));
+    
+    // 特殊单位类型的伤害修正
+    if (attackerType === 'heavyTank') {
+        damage *= 1.5; // 重型坦克对建筑伤害增加50%
+    } else if (attackerType === 'bomber') {
+        damage *= 2.0; // 轰炸机对建筑伤害翻倍
+    }
+    
+    return Math.round(damage);
+}
+
+// 更新建筑损伤状态对收益的影响
+function updateBuildingDamageEffect(tile, player) {
+    if (!tile.building || tile.ownerId !== player.id) return;
+    
+    const building = tile.building;
+    const buildingType = building.type;
+    
+    // 只处理有收入的建筑
+    if (!BUILDINGS[buildingType] || BUILDINGS[buildingType].income <= 0) return;
+    
+    // 获取建筑最大健康值
+    let maxHealth;
+    if (buildingType === 'capital') {
+        maxHealth = BUILDINGS.capital.maxHealth;
+    } else {
+        maxHealth = BUILDINGS[buildingType].maxHealth;
+    }
+    
+    // 计算健康百分比
+    const healthPercent = building.health / maxHealth;
+    
+    // 根据健康状况调整收入
+    let incomeMultiplier;
+    if (healthPercent > 0.7) {
+        incomeMultiplier = 1.0; // 健康 - 正常收入
+    } else if (healthPercent > 0.3) {
+        incomeMultiplier = 0.7; // 受损 - 收入降低30%
+    } else {
+        incomeMultiplier = 0.4; // 严重受损 - 收入降低60%
+    }
+    
+    // 调整建筑收入
+    building.adjustedIncome = Math.round(BUILDINGS[buildingType].income * incomeMultiplier);
+    
+    // 更新玩家总收入
+    updatePlayerIncome(player);
+}
+
+// 摧毁玩家的所有资产（首都被摧毁时）
+function destroyAllPlayerAssets(playerId) {
+    const player = gameState.players[playerId];
+    
+    // 更新玩家状态
+    player.isDefeated = true;
+    player.income = 0;
+    player.buildings = [];
+    
+    // 移除玩家在地图上的所有资产
+    for (let i = 0; i < gameState.map.length; i++) {
+        const tile = gameState.map[i];
+        
+        if (tile.ownerId === playerId) {
+            // 移除所属权
+            tile.ownerId = null;
+            
+            // 移除建筑和单位
+            tile.building = null;
+            if (tile.unit && tile.unit.ownerId === playerId) {
+                tile.unit = null;
+            }
+        } else if (tile.unit && tile.unit.ownerId === playerId) {
+            // 移除玩家的单位（可能在敌方领土上）
+            tile.unit = null;
+        }
+    }
+    
+    // 添加游戏日志
+    addLogEntry(`${player.name}的首都被摧毁，该国家被彻底击败！`);
+    
+    showNotification(`${player.name}被击败！`, 'info');
+}
+
+// 检查游戏是否结束
+function checkGameOver() {
+    // 统计未被击败的玩家数量
+    let activePlayerCount = 0;
+    let lastActivePlayerIndex = -1;
+    
+    for (let i = 0; i < gameState.players.length; i++) {
+        if (!gameState.players[i].isDefeated) {
+            activePlayerCount++;
+            lastActivePlayerIndex = i;
+        }
+    }
+    
+    // 如果只剩一个玩家，游戏结束
+    if (activePlayerCount === 1) {
+        const winner = gameState.players[lastActivePlayerIndex];
+        
+        // 更新游戏状态
+        gameState.isGameOver = true;
+        gameState.winner = winner;
+        
+        // 添加游戏日志
+        addLogEntry(`游戏结束！${winner.name}获得了胜利！`);
+        
+        showNotification(`${winner.name}获得了胜利！`, 'success');
+        
+        // 显示游戏结束画面
+        showGameOverScreen(winner);
+    }
+    
+    return gameState.isGameOver;
+}
+
+// 招募军事单位
+function recruitUnit(x, y, unitType) {
+    const tileIndex = y * GRID_WIDTH + x;
+    const tile = gameState.map[tileIndex];
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    
+    // 检查是否是玩家的领土
+    if (tile.ownerId !== currentPlayer.id) {
+        showNotification('只能在自己的领土上招募单位！', 'error');
+        return false;
+    }
+    
+    // 检查格子上是否已经有单位
+    if (tile.unit) {
+        showNotification('该位置已经有单位！', 'error');
+        return false;
+    }
+    
+    // 获取单位信息
+    const unitInfo = UNITS[unitType];
+    const unitCost = unitInfo.cost;
+    
+    // 检查玩家是否有足够的金币
+    if (currentPlayer.gold < unitCost) {
+        showNotification('金币不足！', 'error');
+        return false;
+    }
+    
+    // 检查招募限制
+    const requiredBuilding = unitInfo.requiredBuilding;
+    if (requiredBuilding) {
+        // 检查建筑招募限制
+        if (requiredBuilding === 'barracks' && gameState.factoryProduction.barracksBuiltThisRound >= 1) {
+            showNotification('每个军营每回合只能招募1个单位！', 'error');
+            return false;
+        } else if (requiredBuilding === 'armoryFactory' && gameState.factoryProduction.armoryFactoryBuiltThisRound >= 1) {
+            showNotification('每个军事工厂每回合只能招募1个单位！', 'error');
+            return false;
+        } else if (requiredBuilding === 'bigArmoryFactory' && gameState.factoryProduction.bigArmoryFactoryBuiltThisRound >= 2) {
+            showNotification('每个大型军事工厂每回合只能招募2个单位！', 'error');
+            return false;
+        }
+        
+        // 检查玩家是否拥有必要的建筑
+        let hasRequiredBuilding = false;
+        
+        // 检查玩家是否拥有必要的建筑
+        for (let i = 0; i < gameState.map.length; i++) {
+            const checkTile = gameState.map[i];
+            if (checkTile.ownerId === currentPlayer.id && 
+                checkTile.building && 
+                checkTile.building.type === requiredBuilding) {
+                hasRequiredBuilding = true;
+                break;
+            }
+        }
+        
+        if (!hasRequiredBuilding) {
+            showNotification(`需要建造${BUILDINGS[requiredBuilding].name}才能招募该单位！`, 'error');
+            return false;
+        }
+        
+        // 增加对应建筑类型的招募计数
+        if (requiredBuilding === 'barracks') {
+            gameState.factoryProduction.barracksBuiltThisRound++;
+        } else if (requiredBuilding === 'armoryFactory') {
+            gameState.factoryProduction.armoryFactoryBuiltThisRound++;
+        } else if (requiredBuilding === 'bigArmoryFactory') {
+            gameState.factoryProduction.bigArmoryFactoryBuiltThisRound++;
+        }
+    }
+    
+    // 扣除金币
+    currentPlayer.gold -= unitCost;
+    
+    // 创建单位
+    tile.unit = {
+        type: unitType,
+        ownerId: currentPlayer.id,
+        health: unitInfo.health,
+        x: x,
+        y: y,
+        hasActed: true,  // 刚招募的单位本回合无法行动
+        id: generateUnitId()
+    };
+    
+    // 添加到玩家单位列表
+    currentPlayer.units.push(tile.unit);
+    
+    // 添加游戏日志
+    addLogEntry(`${currentPlayer.name}在坐标(${x}, ${y})招募了${unitInfo.name}，花费${unitCost}金币。`);
+    
+    // 显示通知
+    showNotification(`招募${unitInfo.name}成功！`);
+    
+    return true;
+}
+
+// 修理建筑
+function repairBuilding(x, y) {
+    const tileIndex = y * GRID_WIDTH + x;
+    const tile = gameState.map[tileIndex];
+    const player = gameState.players[gameState.currentPlayerIndex];
+    
+    // 检查是否是玩家的建筑
+    if (tile.ownerId !== player.id || !tile.building) {
+        showNotification('只能修理自己的建筑！', 'error');
+        return false;
+    }
+    
+    const targetBuilding = tile.building;
+    
+    // 检查建筑是否已满血
+    const buildingType = targetBuilding.type;
+    const maxHealth = buildingType === 'capital' ? BUILDINGS.capital.maxHealth : BUILDINGS[buildingType].maxHealth;
+    
+    if (targetBuilding.health >= maxHealth) {
+        showNotification('该建筑已处于满健康状态！', 'info');
+        return false;
+    }
+    
+    // 计算修理费用 - 根据损失的健康值比例计算
+    const healthPercentLost = 1 - (targetBuilding.health / maxHealth);
+    // 为首都设置特殊的修理费用
+    let repairCost;
+    if (buildingType === "capital") {
+        // 首都修理费用为损失健康值百分比 * 200
+        repairCost = Math.ceil(200 * healthPercentLost);
+    } else {
+        // 其他建筑修理费用为建筑成本的20%乘以损失健康值百分比
+        repairCost = Math.ceil(BUILDINGS[buildingType].cost * 0.2 * healthPercentLost);
+    }
+    
+    if (player.gold < repairCost) {
+        showNotification(`金币不足！修理需要${repairCost}金币。`, 'error');
+        return false;
+    }
+    
+    // 扣除金币
+    player.gold -= repairCost;
+    
+    // 修复建筑
+    const oldHealth = targetBuilding.health;
+    targetBuilding.health = maxHealth;
+    
+    // 更新建筑损伤状态对收益的影响
+    updateBuildingDamageEffect(tile, player);
+    
+    // 添加日志
+    const buildingName = buildingType === 'capital' ? '首都' : BUILDINGS[buildingType].name;
+    addLogEntry(`${player.name}花费${repairCost}金币修复了${buildingName}，健康值从${oldHealth}恢复到${maxHealth}。`);
+    
+    // 显示通知
+    showNotification(`${buildingName}已修复！`, 'success');
+    
+    return true;
+} 
