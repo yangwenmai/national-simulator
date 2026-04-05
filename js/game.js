@@ -102,9 +102,10 @@ function initGameState(playerCount) {
             militaryMaintenance: 0,
             buildings: [],
             units: [],
+            enchantments: [],
             isDefeated: false,
-            totalTurnTime: 0, // 该玩家累计用时
-            currentTurnTime: 0, // 当前回合用时
+            totalTurnTime: 0,
+            currentTurnTime: 0,
             turnCount: 0,
             maxTurnTime: 0,
             minTurnTime: Infinity
@@ -163,6 +164,9 @@ function processEndOfTurn() {
     // 处理魔法兵的特殊效果
     processMagicSoldierEffect();
     
+    // 处理词条效果：生命恢复
+    processEnchantmentRegeneration();
+    
     // 保存当前玩家建筑到玩家buildings列表
     syncPlayerBuildings(currentPlayer.id);
     
@@ -196,6 +200,8 @@ function processEndOfTurn() {
         const tile = gameState.map[i];
         if (tile.unit && tile.unit.ownerId === nextPlayer.id) {
             tile.unit.hasActed = false;
+            tile.unit.hasMoved = false;
+            tile.unit.hasAttacked = false;
         }
     }
     
@@ -210,10 +216,11 @@ function syncPlayerBuildings(playerId) {
     // 清空当前建筑列表
     player.buildings = [];
     
-    // 从地图重建建筑列表
+    // 从地图重建建筑列表（城市只计入锚点，跳过isCityPart）
     for (let i = 0; i < gameState.map.length; i++) {
         const tile = gameState.map[i];
         if (tile.ownerId === playerId && tile.building) {
+            if (tile.building.isCityPart) continue;
             player.buildings.push(tile.building);
         }
     }
@@ -243,7 +250,12 @@ function startBuilding(x, y, buildingType) {
     currentPlayer.gold -= buildingCost;
     
     // 获取建筑总建造时间（如果未定义，默认为2回合）
-    const buildTime = BUILDINGS[buildingType].buildTime || 2;
+    let buildTime = BUILDINGS[buildingType].buildTime || 2;
+    
+    // 词条：快速建造 - 建造时间减少1回合（最低1回合）
+    if (currentPlayer.enchantments && currentPlayer.enchantments.includes('fastBuild')) {
+        buildTime = Math.max(1, buildTime - 1);
+    }
     
     // 创建新的建筑进度并添加到队列
     const buildingProgress = {
@@ -300,8 +312,13 @@ function processBuilding() {
             // 临时设置当前玩家为建筑所有者，确保建筑正确分配
             gameState.currentPlayerIndex = progress.ownerId;
             
-            // 建造建筑，标记为来自建筑进度完成，不再重复扣除金币
-            buildBuilding(progress.x, progress.y, progress.type, true);
+            if (progress.isCity) {
+                // 城市2x2建造完成
+                buildCity(progress.x, progress.y, progress.ownerId);
+            } else {
+                // 普通建筑建造完成
+                buildBuilding(progress.x, progress.y, progress.type, true);
+            }
             
             // 恢复原始玩家索引
             gameState.currentPlayerIndex = originalPlayerIndex;
@@ -416,7 +433,26 @@ function updatePlayerIncome(player) {
         
         if (BUILDINGS[buildingType].income > 0) {
             // 经济建筑
-            const baseIncome = BUILDINGS[buildingType].income;
+            let baseIncome = BUILDINGS[buildingType].income;
+            
+            // 贸易站随机收入 (40-60)
+            if (buildingType === 'tradingPost' && BUILDINGS[buildingType].randomIncome) {
+                const { min, max } = BUILDINGS[buildingType].randomIncome;
+                baseIncome = min + Math.floor(Math.random() * (max - min + 1));
+                building.lastRandomIncome = baseIncome;
+            }
+            
+            // 城市随机收入 (-30~100)，只算锚点避免重复
+            if (buildingType === 'city' && building.isCityAnchor && BUILDINGS.city.randomIncome) {
+                const { min, max } = BUILDINGS.city.randomIncome;
+                baseIncome = min + Math.floor(Math.random() * (max - min + 1));
+                building.lastRandomIncome = baseIncome;
+            }
+            
+            // 城市非锚点部分不计算收入
+            if (buildingType === 'city' && building.isCityPart) {
+                continue;
+            }
             
             // 考虑建筑健康状况
             const healthPercent = building.health / BUILDINGS[buildingType].maxHealth;
@@ -430,7 +466,13 @@ function updatePlayerIncome(player) {
                 incomeMultiplier = 0.4; // 严重受损 - 收入降低60%
             }
             
-            totalIncome += Math.round(baseIncome * incomeMultiplier);
+            // 词条：经济繁荣 - 经济建筑收入+25%
+            let enchantmentMultiplier = 1.0;
+            if (player.enchantments && player.enchantments.includes('economicBoom')) {
+                enchantmentMultiplier = 1.25;
+            }
+            
+            totalIncome += Math.round(baseIncome * incomeMultiplier * enchantmentMultiplier);
         } else if (BUILDINGS[buildingType].income < 0) {
             // 军事/防御/支援建筑 - 维护费
             militaryMaintenance += Math.abs(BUILDINGS[buildingType].income);
@@ -1806,6 +1848,359 @@ function processMagicSoldierEffect() {
         updateGameStateDisplay();
         drawMap();
     }
+}
+
+// 计算城市的实际价格（每多一个城市价格翻倍）
+function getCityCost(player) {
+    const existingCities = player.buildings.filter(b => b.type === 'city').length;
+    return BUILDINGS.city.cost * Math.pow(2, existingCities);
+}
+
+// 获取玩家首都位置
+function getCapitalPosition(player) {
+    for (let i = 0; i < gameState.map.length; i++) {
+        const tile = gameState.map[i];
+        if (tile.ownerId === player.id && tile.building && tile.building.type === 'capital') {
+            return { x: tile.x, y: tile.y };
+        }
+    }
+    return null;
+}
+
+// 获取玩家所有城市锚点位置
+function getCityPositions(player) {
+    const positions = [];
+    for (let i = 0; i < gameState.map.length; i++) {
+        const tile = gameState.map[i];
+        if (tile.ownerId === player.id && tile.building && tile.building.type === 'city' && tile.building.isCityAnchor) {
+            positions.push({ x: tile.x, y: tile.y });
+        }
+    }
+    return positions;
+}
+
+// 验证城市建造位置是否合法
+function validateCityPlacement(x, y, player) {
+    // 检查2x2区域是否在地图范围内
+    if (x + 1 >= GRID_WIDTH || y + 1 >= GRID_HEIGHT) {
+        return { valid: false, reason: '城市需要2x2的空间，超出地图边界！' };
+    }
+    
+    // 检查2x2区域内所有格子
+    const tiles = [
+        { tx: x, ty: y }, { tx: x + 1, ty: y },
+        { tx: x, ty: y + 1 }, { tx: x + 1, ty: y + 1 }
+    ];
+    
+    for (const { tx, ty } of tiles) {
+        const tileIndex = ty * GRID_WIDTH + tx;
+        const tile = gameState.map[tileIndex];
+        
+        if (tile.ownerId !== player.id) {
+            return { valid: false, reason: '城市的所有4个格子必须在自己领土内！' };
+        }
+        if (tile.building) {
+            return { valid: false, reason: '城市区域内不能有其他建筑！' };
+        }
+        if (tile.unit) {
+            return { valid: false, reason: '城市区域内不能有军事单位！' };
+        }
+        if (tile.terrain === 'water') {
+            return { valid: false, reason: '不能在水域上建造城市！' };
+        }
+        
+        const existingProgress = gameState.buildingQueue.find(bp => bp.x === tx && bp.y === ty);
+        if (existingProgress) {
+            return { valid: false, reason: '城市区域内有正在建造的建筑！' };
+        }
+    }
+    
+    // 检查距离首都至少8格
+    const capitalPos = getCapitalPosition(player);
+    if (capitalPos) {
+        const dist = manhattanDistance(x, y, capitalPos.x, capitalPos.y);
+        if (dist < BUILDINGS.city.minDistanceFromCapital) {
+            return { valid: false, reason: `城市必须距离首都至少${BUILDINGS.city.minDistanceFromCapital}格！(当前${dist}格)` };
+        }
+    }
+    
+    // 检查与其他城市的间距至少5格
+    const cityPositions = getCityPositions(player);
+    for (const pos of cityPositions) {
+        const dist = manhattanDistance(x, y, pos.x, pos.y);
+        if (dist < BUILDINGS.city.minDistanceBetweenCities) {
+            return { valid: false, reason: `城市之间必须间隔至少${BUILDINGS.city.minDistanceBetweenCities}格！(与现有城市距离${dist}格)` };
+        }
+    }
+    
+    return { valid: true };
+}
+
+// 建造城市（2x2）
+function startCityBuilding(x, y) {
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    const cityCost = getCityCost(currentPlayer);
+    
+    // 验证位置
+    const validation = validateCityPlacement(x, y, currentPlayer);
+    if (!validation.valid) {
+        showNotification(validation.reason, 'error');
+        return false;
+    }
+    
+    // 检查金币
+    if (currentPlayer.gold < cityCost) {
+        showNotification(`金币不足！城市需要${cityCost}金币。`, 'error');
+        return false;
+    }
+    
+    // 扣除金币
+    currentPlayer.gold -= cityCost;
+    
+    let buildTime = BUILDINGS.city.buildTime;
+    if (currentPlayer.enchantments && currentPlayer.enchantments.includes('fastBuild')) {
+        buildTime = Math.max(1, buildTime - 1);
+    }
+    
+    // 创建建筑进度（只记录锚点，但标记2x2）
+    const buildingProgress = {
+        x: x,
+        y: y,
+        type: 'city',
+        progress: 0,
+        totalTime: buildTime,
+        ownerId: currentPlayer.id,
+        isCity: true,
+        cityTiles: [
+            { x: x, y: y }, { x: x + 1, y: y },
+            { x: x, y: y + 1 }, { x: x + 1, y: y + 1 }
+        ]
+    };
+    
+    gameState.buildingQueue.push(buildingProgress);
+    
+    addLogEntry(`${currentPlayer.name}开始在坐标(${x}, ${y})建造城市，花费${cityCost}金币。`);
+    showNotification(`开始建造城市，将在${buildTime}回合后完成。`, 'success');
+    
+    return true;
+}
+
+// 完成城市建造（放置2x2建筑到地图上）
+function buildCity(x, y, ownerId) {
+    const buildingId = generateBuildingId();
+    const player = gameState.players[ownerId];
+    
+    // 创建城市锚点建筑
+    const cityBuilding = {
+        type: 'city',
+        name: '城市',
+        health: BUILDINGS.city.maxHealth,
+        id: buildingId,
+        isCityAnchor: true,
+        anchorX: x,
+        anchorY: y
+    };
+    
+    // 放置到4个格子
+    const tiles = [
+        { tx: x, ty: y }, { tx: x + 1, ty: y },
+        { tx: x, ty: y + 1 }, { tx: x + 1, ty: y + 1 }
+    ];
+    
+    for (let i = 0; i < tiles.length; i++) {
+        const { tx, ty } = tiles[i];
+        const tileIndex = ty * GRID_WIDTH + tx;
+        const tile = gameState.map[tileIndex];
+        
+        if (i === 0) {
+            tile.building = cityBuilding;
+        } else {
+            tile.building = {
+                type: 'city',
+                name: '城市',
+                health: BUILDINGS.city.maxHealth,
+                id: buildingId,
+                isCityPart: true,
+                cityAnchorX: x,
+                cityAnchorY: y
+            };
+        }
+        
+        tile.ownerId = ownerId;
+    }
+    
+    // 扩张领土（从4个角扩展）
+    for (const { tx, ty } of tiles) {
+        expandTerritory(tx, ty, ownerId);
+    }
+    
+    syncPlayerBuildings(ownerId);
+    updatePlayerIncome(player);
+    
+    addLogEntry(`${player.name}在坐标(${x}, ${y})建造了城市！所有军事单位现在每回合可以同时移动和攻击。`);
+    showNotification('城市建造完成！单位现在可以每回合移动+攻击！', 'success');
+}
+
+// 检查玩家是否拥有城市
+function playerHasCity(player) {
+    return player.buildings.some(b => b.type === 'city' && b.isCityAnchor);
+}
+
+// 购买词条
+function purchaseEnchantment(enchantmentId) {
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    const enchantment = ENCHANTMENTS[enchantmentId];
+    
+    if (!enchantment) {
+        showNotification('无效的词条！', 'error');
+        return false;
+    }
+    
+    // 检查是否已拥有
+    if (currentPlayer.enchantments.includes(enchantmentId)) {
+        showNotification('已拥有该词条！', 'error');
+        return false;
+    }
+    
+    // 检查是否拥有魔法学院
+    const hasMagicAcademy = currentPlayer.buildings.some(b => b.type === 'magicAcademy');
+    if (!hasMagicAcademy) {
+        showNotification('需要建造魔法学院才能购买词条！', 'error');
+        return false;
+    }
+    
+    // 检查金币
+    if (currentPlayer.gold < enchantment.cost) {
+        showNotification('金币不足！', 'error');
+        return false;
+    }
+    
+    // 扣除金币
+    currentPlayer.gold -= enchantment.cost;
+    
+    // 添加词条
+    currentPlayer.enchantments.push(enchantmentId);
+    
+    addLogEntry(`${currentPlayer.name}获得了词条「${enchantment.name}」：${enchantment.desc}`);
+    showNotification(`成功获得词条「${enchantment.name}」！`, 'success');
+    
+    // 如果是经济类词条，立即更新收入
+    if (enchantmentId === 'economicBoom') {
+        updatePlayerIncome(currentPlayer);
+    }
+    
+    updateGameStateDisplay();
+    drawMap();
+    return true;
+}
+
+// 处理词条效果：生命恢复
+function processEnchantmentRegeneration() {
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    if (!currentPlayer.enchantments || !currentPlayer.enchantments.includes('regeneration')) return;
+    
+    let healed = false;
+    for (let i = 0; i < gameState.map.length; i++) {
+        const tile = gameState.map[i];
+        if (tile.unit && tile.unit.ownerId === currentPlayer.id) {
+            const maxHealth = UNITS[tile.unit.type].health;
+            if (tile.unit.health < maxHealth) {
+                tile.unit.health = Math.min(tile.unit.health + 15, maxHealth);
+                healed = true;
+            }
+        }
+    }
+    
+    if (healed) {
+        addLogEntry(`${currentPlayer.name}的词条「生命恢复」为受伤单位恢复了生命值。`);
+    }
+}
+
+// 拆除建筑
+function demolishBuilding(x, y) {
+    const tileIndex = y * GRID_WIDTH + x;
+    const tile = gameState.map[tileIndex];
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    
+    if (tile.ownerId !== currentPlayer.id || !tile.building) {
+        showNotification('只能拆除自己的建筑！', 'error');
+        return false;
+    }
+    
+    const building = tile.building;
+    let buildingType = building.type;
+    
+    // 首都不能拆除
+    if (buildingType === 'capital') {
+        showNotification('不能拆除首都！', 'error');
+        return false;
+    }
+    
+    // 处理城市（2x2）拆除
+    if (buildingType === 'city') {
+        let anchorX, anchorY;
+        if (building.isCityAnchor) {
+            anchorX = building.anchorX;
+            anchorY = building.anchorY;
+        } else if (building.isCityPart) {
+            anchorX = building.cityAnchorX;
+            anchorY = building.cityAnchorY;
+        }
+        
+        // 计算返还（用实际支付的价格计算比较复杂，简化为基础价格50%）
+        const existingCities = currentPlayer.buildings.filter(b => b.type === 'city' && b.isCityAnchor).length;
+        const cityCost = BUILDINGS.city.cost * Math.pow(2, Math.max(0, existingCities - 1));
+        const refund = Math.floor(cityCost * 0.5);
+        
+        currentPlayer.gold += refund;
+        
+        // 清除4个格子
+        const cityTiles = [
+            { tx: anchorX, ty: anchorY }, { tx: anchorX + 1, ty: anchorY },
+            { tx: anchorX, ty: anchorY + 1 }, { tx: anchorX + 1, ty: anchorY + 1 }
+        ];
+        
+        for (const { tx, ty } of cityTiles) {
+            if (tx >= 0 && tx < GRID_WIDTH && ty >= 0 && ty < GRID_HEIGHT) {
+                const idx = ty * GRID_WIDTH + tx;
+                gameState.map[idx].building = null;
+            }
+        }
+        
+        syncPlayerBuildings(currentPlayer.id);
+        updatePlayerIncome(currentPlayer);
+        
+        addLogEntry(`${currentPlayer.name}拆除了城市，返还${refund}金币。`);
+        showNotification(`拆除城市，返还${refund}金币！`, 'success');
+        
+        updateGameStateDisplay();
+        drawMap();
+        return true;
+    }
+    
+    // 普通建筑拆除
+    const originalCost = BUILDINGS[buildingType].cost;
+    const refund = Math.floor(originalCost * 0.5);
+    
+    currentPlayer.gold += refund;
+    
+    const buildingName = building.name;
+    tile.building = null;
+    
+    syncPlayerBuildings(currentPlayer.id);
+    updatePlayerIncome(currentPlayer);
+    
+    addLogEntry(`${currentPlayer.name}拆除了${buildingName}，返还${refund}金币。`);
+    showNotification(`拆除${buildingName}，返还${refund}金币！`, 'success');
+    
+    updateGameStateDisplay();
+    drawMap();
+    return true;
+}
+
+// 检查玩家是否拥有魔法学院
+function playerHasMagicAcademy(player) {
+    return player.buildings.some(b => b.type === 'magicAcademy');
 }
 
 // 格式化数字为带千分位的格式

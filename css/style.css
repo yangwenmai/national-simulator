@@ -320,4 +320,77 @@ button:disabled {
 
 #selection-info {
     margin-top: 15px;
-} 
+}
+
+/* 词条按钮样式 */
+.enchantment-btn {
+    background-color: #8e44ad;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    text-align: left;
+    padding: 8px 12px;
+}
+
+.enchantment-btn:hover:not(:disabled) {
+    background-color: #7d3c98;
+}
+
+.enchantment-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* 地图悬浮提示框 */
+.map-tooltip {
+    position: fixed;
+    pointer-events: none;
+    z-index: 200;
+    background: rgba(30, 30, 30, 0.92);
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.6;
+    max-width: 240px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.12);
+    opacity: 0;
+    transition: opacity 0.12s ease;
+    white-space: nowrap;
+}
+
+.map-tooltip.visible {
+    opacity: 1;
+}
+
+.map-tooltip .tooltip-title {
+    font-weight: bold;
+    font-size: 14px;
+    margin-bottom: 3px;
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+    padding-bottom: 3px;
+}
+
+.map-tooltip .tooltip-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.map-tooltip .tooltip-label {
+    color: rgba(255,255,255,0.6);
+}
+
+.map-tooltip .tooltip-value {
+    font-weight: bold;
+}
+
+.map-tooltip .tooltip-hp-good { color: #4CAF50; }
+.map-tooltip .tooltip-hp-warn { color: #FFC107; }
+.map-tooltip .tooltip-hp-crit { color: #F44336; }
+.map-tooltip .tooltip-sep {
+    border-top: 1px solid rgba(255,255,255,0.12);
+    margin: 4px 0;
+}

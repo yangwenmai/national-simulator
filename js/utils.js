@@ -136,7 +136,14 @@ function openTab(tabId) {
 // 扩张领土
 function expandTerritory(x, y, playerId) {
     // 建筑周围的影响范围
-    const radius = 1;
+    let radius = 1;
+    
+    // 词条：领土扩张 - 范围+1
+    const player = gameState.players[playerId];
+    if (player && player.enchantments && player.enchantments.includes('territoryExpand')) {
+        radius = 2;
+    }
+    
     let expanded = false;
     
     // 遍历周围的格子

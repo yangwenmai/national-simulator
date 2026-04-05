@@ -53,6 +53,10 @@ function initUI() {
     // 添加画布点击事件
     canvas.addEventListener('click', handleCanvasClick);
     
+    // 添加画布悬浮提示
+    canvas.addEventListener('mousemove', handleCanvasHover);
+    canvas.addEventListener('mouseleave', hideMapTooltip);
+    
     // 添加按钮事件
     document.getElementById('end-turn-btn').addEventListener('click', endTurn);
     document.getElementById('cancel-action-btn').addEventListener('click', cancelCurrentAction);
@@ -124,6 +128,9 @@ function updateGameStateDisplay() {
     
     // 更新军事单位选项
     updateMilitaryOptions();
+    
+    // 更新词条选项
+    updateEnchantmentOptions();
     
     // 设置定时更新计时器显示
     if (!gameState.isGameOver && !gameState._timerInterval) {
@@ -344,10 +351,24 @@ function updateSelectionInfo() {
             buildingInfo.appendChild(healthInfo);
             
             // 如果有收入，显示收入
-            if (building.income > 0 || (building.type && BUILDINGS[building.type] && BUILDINGS[building.type].income > 0)) {
+            if (building.type && BUILDINGS[building.type] && 
+                (BUILDINGS[building.type].income > 0 || BUILDINGS[building.type].randomIncome)) {
                 const incomeInfo = document.createElement('p');
-                const actualIncome = building.adjustedIncome !== undefined ? building.adjustedIncome : (building.income || BUILDINGS[building.type].income);
-                incomeInfo.textContent = `收入: ${actualIncome}/回合`;
+                if (building.type === 'tradingPost' && BUILDINGS.tradingPost.randomIncome) {
+                    const { min, max } = BUILDINGS.tradingPost.randomIncome;
+                    const lastIncome = building.lastRandomIncome || '?';
+                    incomeInfo.textContent = `收入: ${min}~${max}/回合 (上回合: ${lastIncome})`;
+                } else if (building.type === 'city' && BUILDINGS.city.randomIncome) {
+                    const { min, max } = BUILDINGS.city.randomIncome;
+                    const lastIncome = building.lastRandomIncome !== undefined ? building.lastRandomIncome : '?';
+                    incomeInfo.textContent = `收入: ${min}~${max}/回合 (上回合: ${lastIncome})`;
+                    if (building.isCityPart) {
+                        incomeInfo.textContent += ' (副格)';
+                    }
+                } else {
+                    const actualIncome = building.adjustedIncome !== undefined ? building.adjustedIncome : (building.income || BUILDINGS[building.type].income);
+                    incomeInfo.textContent = `收入: ${actualIncome}/回合`;
+                }
                 buildingInfo.appendChild(incomeInfo);
             }
             
@@ -367,13 +388,10 @@ function updateSelectionInfo() {
                 
                 // 计算修理费用
                 const healthPercentLost = 1 - (building.health / maxHealth);
-                // 为首都设置特殊的修理费用
                 let repairCost;
                 if (building.type === "capital") {
-                    // 首都修理费用为损失健康值百分比 * 200
                     repairCost = Math.ceil(200 * healthPercentLost);
                 } else {
-                    // 其他建筑修理费用为建筑成本的20%乘以损失健康值百分比
                     repairCost = Math.ceil(BUILDINGS[building.type].cost * 0.2 * healthPercentLost);
                 }
                 
@@ -385,6 +403,25 @@ function updateSelectionInfo() {
                 });
                 
                 buildingInfo.appendChild(repairButton);
+            }
+            
+            // 如果是当前玩家的建筑（非首都），显示拆除按钮
+            if (mapTile.ownerId === gameState.currentPlayerIndex && building.type !== 'capital') {
+                const demolishButton = document.createElement('button');
+                const refund = Math.floor(BUILDINGS[building.type].cost * 0.5);
+                demolishButton.textContent = `拆除 (返还¥${refund})`;
+                demolishButton.style.backgroundColor = '#e74c3c';
+                demolishButton.style.marginTop = '4px';
+                
+                demolishButton.addEventListener('click', () => {
+                    if (confirm(`确定要拆除${building.name}吗？将返还${refund}金币。`)) {
+                        demolishBuilding(tile.x, tile.y);
+                        gameState.selectedTile = null;
+                        updateSelectionInfo();
+                    }
+                });
+                
+                buildingInfo.appendChild(demolishButton);
             }
             
             infoContainer.appendChild(buildingInfo);
@@ -509,11 +546,30 @@ function updateSelectionInfo() {
             // 如果是当前玩家的单位，显示行动状态
             if (unit.ownerId === gameState.currentPlayerIndex) {
                 const actionInfo = document.createElement('p');
-                actionInfo.textContent = unit.hasActed ? '状态: 已行动' : '状态: 可行动';
+                const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+                const hasCity = playerHasCity(currentPlayer);
+                
+                if (hasCity) {
+                    const moveStatus = unit.hasMoved ? '已移动' : '可移动';
+                    const attackStatus = unit.hasAttacked ? '已攻击' : '可攻击';
+                    actionInfo.textContent = `状态: ${moveStatus} / ${attackStatus}`;
+                    if (!unit.hasMoved || !unit.hasAttacked) {
+                        actionInfo.style.color = '#27ae60';
+                    }
+                } else {
+                    actionInfo.textContent = unit.hasActed ? '状态: 已行动' : '状态: 可行动';
+                }
                 unitInfo.appendChild(actionInfo);
                 
-                // 如果单位可以行动，显示军事行动面板
-                if (!unit.hasActed) {
+                // 判断单位是否还能行动
+                let canStillAct = false;
+                if (hasCity) {
+                    canStillAct = !unit.hasMoved || !unit.hasAttacked;
+                } else {
+                    canStillAct = !unit.hasActed;
+                }
+                
+                if (canStillAct) {
                     showElement('military-actions-panel');
                     gameState.selectedUnit = unit;
                 } else {
@@ -592,6 +648,8 @@ function updateBuildingOptions() {
     
     buildingsPanel.innerHTML = '';
     
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    
     // 添加标题
     const title = document.createElement('h3');
     title.textContent = '建造建筑';
@@ -643,19 +701,38 @@ function updateBuildingOptions() {
             buildingBtn.className = 'building-btn';
             buildingBtn.dataset.buildingType = buildingType;
             
+            // 计算显示价格（城市动态价格）
+            let displayCost = building.cost;
+            if (buildingType === 'city') {
+                displayCost = getCityCost(currentPlayer);
+            }
+            
             // 设置按钮内容
+            let incomeDisplay;
+            if (building.randomIncome) {
+                const sign = building.randomIncome.min < 0 ? '' : '+';
+                incomeDisplay = `${sign}${building.randomIncome.min}~+${building.randomIncome.max}/回合`;
+            } else {
+                incomeDisplay = `${building.income >= 0 ? '+' : ''}${building.income}/回合`;
+            }
+            
+            let extraInfo = '';
+            if (buildingType === 'city') {
+                extraInfo = '<div style="font-size:10px;opacity:0.85;">2x2 | 距首都≥8格</div>';
+            }
+            
             buildingBtn.innerHTML = `
                 <strong>${building.name}</strong>
-                <div>¥${building.cost}</div>
-                <div>${building.income >= 0 ? '+' : ''}${building.income}/回合</div>
+                <div>¥${displayCost}</div>
+                <div>${incomeDisplay}</div>
+                ${extraInfo}
             `;
             
             // 添加建筑详情的悬停提示
             buildingBtn.title = `${building.name}\n${building.desc}\n建造时间：${building.buildTime}回合\n生命值：${building.maxHealth}\n\n战斗属性：所有建筑享有25%的伤害减免${buildingType === 'capital' ? '，但对轰炸机和重型坦克尤其脆弱' : ''}`;
             
             // 检查当前玩家是否有足够的金币
-            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-            if (currentPlayer.gold < building.cost) {
+            if (currentPlayer.gold < displayCost) {
                 buildingBtn.disabled = true;
                 buildingBtn.classList.add('disabled');
                 buildingBtn.title += '\n\n金币不足！';
@@ -792,7 +869,15 @@ function updateMilitaryOptions() {
             // 检查所需建筑
             if (unit.requiredBuildings) {
                 // 多建筑要求
-                const requiredBuildings = unit.requiredBuildings;
+                let requiredBuildings = [...unit.requiredBuildings];
+                
+                // 词条：特殊征召 - 魔法兵无需魔法学院
+                if (unitType === 'magicSoldier' && 
+                    currentPlayer.enchantments && 
+                    currentPlayer.enchantments.includes('specialRecruit')) {
+                    requiredBuildings = requiredBuildings.filter(b => b !== 'magicAcademy');
+                }
+                
                 let missingBuildings = [];
                 
                 for (const buildingType of requiredBuildings) {
@@ -859,6 +944,112 @@ function updateMilitaryOptions() {
     
     // 显示面板
     showElement('military-panel');
+}
+
+// 更新词条选项面板
+function updateEnchantmentOptions() {
+    let enchantmentPanel = document.getElementById('enchantment-options');
+    if (!enchantmentPanel) return;
+    
+    enchantmentPanel.innerHTML = '';
+    
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    const hasMagicAcademy = currentPlayer.buildings.some(b => b.type === 'magicAcademy');
+    
+    // 标题
+    const title = document.createElement('h3');
+    title.textContent = '词条系统';
+    enchantmentPanel.appendChild(title);
+    
+    if (!hasMagicAcademy) {
+        const notice = document.createElement('p');
+        notice.textContent = '需要建造「魔法学院」才能解锁词条系统。';
+        notice.style.color = '#999';
+        notice.style.fontStyle = 'italic';
+        notice.style.padding = '10px 0';
+        enchantmentPanel.appendChild(notice);
+        return;
+    }
+    
+    // 已拥有词条
+    if (currentPlayer.enchantments.length > 0) {
+        const ownedTitle = document.createElement('h4');
+        ownedTitle.textContent = `已拥有词条 (${currentPlayer.enchantments.length}/9)`;
+        ownedTitle.style.marginBottom = '5px';
+        ownedTitle.style.color = '#27ae60';
+        enchantmentPanel.appendChild(ownedTitle);
+        
+        const ownedContainer = document.createElement('div');
+        ownedContainer.style.marginBottom = '15px';
+        
+        currentPlayer.enchantments.forEach(enchId => {
+            const ench = ENCHANTMENTS[enchId];
+            if (ench) {
+                const tag = document.createElement('span');
+                tag.textContent = `${ench.icon} ${ench.name}`;
+                tag.style.display = 'inline-block';
+                tag.style.padding = '3px 8px';
+                tag.style.margin = '2px';
+                tag.style.backgroundColor = '#27ae60';
+                tag.style.color = 'white';
+                tag.style.borderRadius = '12px';
+                tag.style.fontSize = '12px';
+                tag.title = ench.desc;
+                ownedContainer.appendChild(tag);
+            }
+        });
+        
+        enchantmentPanel.appendChild(ownedContainer);
+    }
+    
+    // 可购买词条
+    const availableTitle = document.createElement('h4');
+    availableTitle.textContent = '可购买词条';
+    availableTitle.style.marginBottom = '8px';
+    enchantmentPanel.appendChild(availableTitle);
+    
+    const enchList = document.createElement('div');
+    enchList.className = 'enchantment-list';
+    
+    for (const [enchId, ench] of Object.entries(ENCHANTMENTS)) {
+        const owned = currentPlayer.enchantments.includes(enchId);
+        
+        const enchBtn = document.createElement('button');
+        enchBtn.className = 'enchantment-btn';
+        enchBtn.style.display = 'flex';
+        enchBtn.style.justifyContent = 'space-between';
+        enchBtn.style.alignItems = 'center';
+        enchBtn.style.textAlign = 'left';
+        enchBtn.style.padding = '8px 12px';
+        enchBtn.style.marginBottom = '6px';
+        enchBtn.style.backgroundColor = owned ? '#95a5a6' : '#8e44ad';
+        enchBtn.style.fontSize = '13px';
+        
+        enchBtn.innerHTML = `
+            <div>
+                <strong>${ench.icon} ${ench.name}</strong>
+                <div style="font-size: 11px; opacity: 0.9;">${ench.desc}</div>
+            </div>
+            <div style="white-space: nowrap; margin-left: 8px;">
+                ${owned ? '已拥有' : `¥${ench.cost}`}
+            </div>
+        `;
+        
+        if (owned || currentPlayer.gold < ench.cost) {
+            enchBtn.disabled = true;
+            enchBtn.classList.add('disabled');
+        }
+        
+        if (!owned) {
+            enchBtn.addEventListener('click', () => {
+                purchaseEnchantment(enchId);
+            });
+        }
+        
+        enchList.appendChild(enchBtn);
+    }
+    
+    enchantmentPanel.appendChild(enchList);
 }
 
 // 处理画布点击事件
@@ -952,6 +1143,17 @@ function handleBuildModeClick(x, y) {
     const tileIndex = y * GRID_WIDTH + x;
     const clickedTile = gameState.map[tileIndex];
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    const buildingType = gameState.selectedBuildingType;
+    
+    // 城市建造使用专用逻辑
+    if (buildingType === 'city') {
+        if (startCityBuilding(x, y)) {
+            exitBuildMode();
+            updateGameStateDisplay();
+            drawMap();
+        }
+        return;
+    }
     
     // 检查是否是当前玩家的领土
     if (clickedTile.ownerId !== currentPlayer.id) {
@@ -971,17 +1173,20 @@ function handleBuildModeClick(x, y) {
         return;
     }
     
-    // 检查是否已经有建筑进度
-    const existingProgress = gameState.buildingQueue.find(bp => bp.x === x && bp.y === y);
+    // 检查是否已经有建筑进度（包括城市占的2x2区域）
+    const existingProgress = gameState.buildingQueue.find(bp => {
+        if (bp.x === x && bp.y === y) return true;
+        if (bp.isCity && bp.cityTiles) {
+            return bp.cityTiles.some(ct => ct.x === x && ct.y === y);
+        }
+        return false;
+    });
     if (existingProgress) {
         showNotification(`该位置已经在建造${BUILDINGS[existingProgress.type].name}！`, 'error');
         return;
     }
     
-    // 开始建造
-    const buildingType = gameState.selectedBuildingType;
-    
-    // 检查地形约束（例如矿场只能建在山地上）
+    // 检查地形约束
     if (clickedTile.terrain === 'water') {
         showNotification('不能在水域上建造建筑！', 'error');
         return;
@@ -992,16 +1197,11 @@ function handleBuildModeClick(x, y) {
         return;
     }
     
-    // 使用startBuilding函数来开始建造
     if (startBuilding(x, y, buildingType)) {
-        // 退出建造模式
         exitBuildMode();
-        
-        // 立即更新游戏状态显示并重绘
         updateGameStateDisplay();
         drawMap();
         
-        // 通知用户建筑已开始建造
         const buildingName = BUILDINGS[buildingType].name;
         const buildTime = BUILDINGS[buildingType].buildTime || 2;
         showNotification(`开始建造${buildingName}，将在${buildTime}回合后完成。`, 'success');
@@ -1132,6 +1332,13 @@ function startMoveMode() {
         return;
     }
     
+    // 有城市时检查是否已移动
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    if (playerHasCity(currentPlayer) && gameState.selectedUnit.hasMoved) {
+        showNotification('该单位本回合已移动！', 'error');
+        return;
+    }
+    
     gameState.moveMode = true;
     
     // 显示取消按钮
@@ -1159,6 +1366,13 @@ function exitMoveMode() {
 function startAttackMode() {
     if (!gameState.selectedUnit) {
         showNotification('没有选中任何单位！', 'error');
+        return;
+    }
+    
+    // 有城市时检查是否已攻击
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    if (playerHasCity(currentPlayer) && gameState.selectedUnit.hasAttacked) {
+        showNotification('该单位本回合已攻击！', 'error');
         return;
     }
     
@@ -1391,40 +1605,54 @@ function showPlayerCountDialog() {
 
 // 高亮可建造的格子
 function highlightAvailableBuildTiles() {
-    // 移除之前的高亮效果
     clearTileHighlights();
     
-    // 获取当前玩家
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
     const buildingType = gameState.selectedBuildingType;
     
-    // 遍历所有格子
+    // 城市：高亮所有有效的2x2起始点
+    if (buildingType === 'city') {
+        for (let y = 0; y < GRID_HEIGHT - 1; y++) {
+            for (let x = 0; x < GRID_WIDTH - 1; x++) {
+                const validation = validateCityPlacement(x, y, currentPlayer);
+                if (validation.valid) {
+                    // 高亮2x2区域
+                    const tiles = [
+                        { tx: x, ty: y }, { tx: x + 1, ty: y },
+                        { tx: x, ty: y + 1 }, { tx: x + 1, ty: y + 1 }
+                    ];
+                    for (const { tx, ty } of tiles) {
+                        const idx = ty * GRID_WIDTH + tx;
+                        gameState.map[idx].highlight = {
+                            color: 'rgba(155, 89, 182, 0.4)',
+                            border: '2px solid #8e44ad'
+                        };
+                    }
+                }
+            }
+        }
+        drawMap();
+        return;
+    }
+    
+    // 普通建筑高亮
     for (let y = 0; y < GRID_HEIGHT; y++) {
         for (let x = 0; x < GRID_WIDTH; x++) {
             const tileIndex = y * GRID_WIDTH + x;
             const tile = gameState.map[tileIndex];
             
-            // 检查是否是可建造的格子（当前玩家的领土，没有建筑和单位）
             if (tile.ownerId === currentPlayer.id && !tile.building && !tile.unit) {
-                // 检查地形约束
-                if (tile.terrain === 'water') {
-                    continue; // 不能在水域上建造建筑
-                }
+                if (tile.terrain === 'water') continue;
+                if (buildingType === 'mine' && tile.terrain !== 'mountain') continue;
                 
-                if (buildingType === 'mine' && tile.terrain !== 'mountain') {
-                    continue; // 矿场只能建在山地上
-                }
-                
-                // 高亮可建造的格子
                 tile.highlight = {
-                    color: 'rgba(46, 204, 113, 0.4)', // 绿色半透明
+                    color: 'rgba(46, 204, 113, 0.4)',
                     border: '2px solid #27ae60'
                 };
             }
         }
     }
     
-    // 重绘地图以显示高亮效果
     drawMap();
 }
 
@@ -1648,4 +1876,179 @@ function handleOutsideClick(event) {
         event.target.id !== 'float-feedback-btn') {
         closeFeedbackForm();
     }
-} 
+}
+
+// ========== 地图悬浮提示框 ==========
+
+let _lastHoverTileX = -1;
+let _lastHoverTileY = -1;
+
+function handleCanvasHover(event) {
+    if (!gameState || !gameState.map) return;
+
+    const tooltip = document.getElementById('map-tooltip');
+    if (!tooltip) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const mouseX = (event.clientX - rect.left) * scaleX;
+    const mouseY = (event.clientY - rect.top) * scaleY;
+
+    const cellWidth = canvas.width / GRID_WIDTH;
+    const cellHeight = canvas.height / GRID_HEIGHT;
+
+    const tileX = Math.floor(mouseX / cellWidth);
+    const tileY = Math.floor(mouseY / cellHeight);
+
+    if (tileX < 0 || tileX >= GRID_WIDTH || tileY < 0 || tileY >= GRID_HEIGHT) {
+        hideMapTooltip();
+        return;
+    }
+
+    // 仅在切换到新格子时更新内容
+    if (tileX !== _lastHoverTileX || tileY !== _lastHoverTileY) {
+        _lastHoverTileX = tileX;
+        _lastHoverTileY = tileY;
+
+        const tileIndex = tileY * GRID_WIDTH + tileX;
+        const tile = gameState.map[tileIndex];
+        const html = buildTooltipHTML(tile, tileX, tileY);
+
+        if (!html) {
+            hideMapTooltip();
+            return;
+        }
+
+        tooltip.innerHTML = html;
+        tooltip.classList.add('visible');
+    }
+
+    // 更新位置（每次鼠标移动都更新）
+    const offsetX = 14;
+    const offsetY = 14;
+    let left = event.clientX + offsetX;
+    let top = event.clientY + offsetY;
+
+    const tw = tooltip.offsetWidth;
+    const th = tooltip.offsetHeight;
+    if (left + tw > window.innerWidth - 8) left = event.clientX - tw - offsetX;
+    if (top + th > window.innerHeight - 8) top = event.clientY - th - offsetY;
+
+    tooltip.style.left = left + 'px';
+    tooltip.style.top = top + 'px';
+}
+
+function hideMapTooltip() {
+    _lastHoverTileX = -1;
+    _lastHoverTileY = -1;
+    const tooltip = document.getElementById('map-tooltip');
+    if (tooltip) tooltip.classList.remove('visible');
+}
+
+function buildTooltipHTML(tile, x, y) {
+    const lines = [];
+
+    // 地形
+    const terrainName = getTerrainName(tile.terrain);
+
+    // 所有者
+    let ownerStr = '';
+    if (tile.ownerId !== null) {
+        const owner = gameState.players[tile.ownerId];
+        ownerStr = `<span style="color:${owner.color.main}">${owner.name}</span>`;
+    }
+
+    // 建筑信息
+    const building = tile.building;
+    const unit = tile.unit;
+
+    // 如果既无建筑也无单位，只显示简洁的地形+坐标
+    if (!building && !unit) {
+        lines.push(`<div class="tooltip-title">${terrainName} (${x},${y})</div>`);
+        if (ownerStr) lines.push(`<div class="tooltip-row"><span class="tooltip-label">领地</span>${ownerStr}</div>`);
+
+        // 检查是否有建造中的建筑
+        const inProgress = gameState.buildingQueue ? gameState.buildingQueue.find(bp => {
+            if (bp.x === x && bp.y === y) return true;
+            if (bp.isCity && bp.cityTiles) return bp.cityTiles.some(ct => ct.x === x && ct.y === y);
+            return false;
+        }) : null;
+
+        if (inProgress) {
+            const bName = BUILDINGS[inProgress.type] ? BUILDINGS[inProgress.type].name : inProgress.type;
+            lines.push(`<div class="tooltip-sep"></div>`);
+            lines.push(`<div class="tooltip-title">建造中: ${bName}</div>`);
+            lines.push(`<div class="tooltip-row"><span class="tooltip-label">进度</span><span class="tooltip-value">${inProgress.progress}%</span></div>`);
+        }
+
+        return lines.join('');
+    }
+
+    // 有建筑
+    if (building) {
+        const bDef = BUILDINGS[building.type];
+        const bName = building.name || (bDef ? bDef.name : '未知建筑');
+        lines.push(`<div class="tooltip-title">${bName}</div>`);
+        lines.push(`<div class="tooltip-row"><span class="tooltip-label">坐标</span><span>(${x},${y}) ${terrainName}</span></div>`);
+        if (ownerStr) lines.push(`<div class="tooltip-row"><span class="tooltip-label">所有者</span>${ownerStr}</div>`);
+
+        if (bDef) {
+            const maxHP = bDef.maxHealth;
+            const curHP = Math.max(0, building.health || 0);
+            const pct = Math.round((curHP / maxHP) * 100);
+            const hpClass = pct > 70 ? 'tooltip-hp-good' : pct > 30 ? 'tooltip-hp-warn' : 'tooltip-hp-crit';
+            lines.push(`<div class="tooltip-row"><span class="tooltip-label">生命</span><span class="${hpClass} tooltip-value">${curHP}/${maxHP}</span></div>`);
+
+            if (bDef.randomIncome) {
+                const last = building.lastRandomIncome !== undefined ? building.lastRandomIncome : '?';
+                lines.push(`<div class="tooltip-row"><span class="tooltip-label">收入</span><span class="tooltip-value">${bDef.randomIncome.min}~${bDef.randomIncome.max} (上回合:${last})</span></div>`);
+            } else if (bDef.income !== 0) {
+                const sign = bDef.income > 0 ? '+' : '';
+                lines.push(`<div class="tooltip-row"><span class="tooltip-label">收入</span><span class="tooltip-value">${sign}${bDef.income}/回合</span></div>`);
+            }
+
+            if (building.isCityPart) {
+                lines.push(`<div style="font-size:11px;opacity:0.7;margin-top:2px;">城市副格(锚点:${building.anchorX},${building.anchorY})</div>`);
+            }
+        }
+    }
+
+    // 有单位
+    if (unit) {
+        if (building) lines.push(`<div class="tooltip-sep"></div>`);
+        const uDef = UNITS[unit.type];
+        const uName = uDef ? uDef.name : '未知单位';
+        lines.push(`<div class="tooltip-title">${uName}</div>`);
+        if (!building) {
+            lines.push(`<div class="tooltip-row"><span class="tooltip-label">坐标</span><span>(${x},${y}) ${terrainName}</span></div>`);
+            if (ownerStr) lines.push(`<div class="tooltip-row"><span class="tooltip-label">所有者</span>${ownerStr}</div>`);
+        }
+
+        if (uDef) {
+            const maxHP = uDef.health;
+            const curHP = Math.max(0, isNaN(unit.health) ? 0 : unit.health);
+            const pct = Math.round((curHP / maxHP) * 100);
+            const hpClass = pct > 70 ? 'tooltip-hp-good' : pct > 30 ? 'tooltip-hp-warn' : 'tooltip-hp-crit';
+            lines.push(`<div class="tooltip-row"><span class="tooltip-label">生命</span><span class="${hpClass} tooltip-value">${curHP}/${maxHP}</span></div>`);
+
+            let atkDisplay = uDef.attack;
+            if (unit.type === 'instructor') {
+                const calcFn = window.calculateInstructorAttack || calculateInstructorAttackLocal;
+                atkDisplay = calcFn(unit);
+            }
+            lines.push(`<div class="tooltip-row"><span class="tooltip-label">攻/防</span><span class="tooltip-value">${atkDisplay} / ${uDef.defense}</span></div>`);
+            lines.push(`<div class="tooltip-row"><span class="tooltip-label">移动/攻击</span><span class="tooltip-value">${uDef.moveRange} / ${uDef.attackRange}</span></div>`);
+
+            if (unit.hasActed) {
+                lines.push(`<div style="color:#e74c3c;font-size:11px;margin-top:2px;">已行动</div>`);
+            } else if (unit.hasMoved && !unit.hasAttacked) {
+                lines.push(`<div style="color:#f39c12;font-size:11px;margin-top:2px;">已移动 / 可攻击</div>`);
+            } else if (unit.hasAttacked && !unit.hasMoved) {
+                lines.push(`<div style="color:#f39c12;font-size:11px;margin-top:2px;">可移动 / 已攻击</div>`);
+            }
+        }
+    }
+
+    return lines.join('');
+}

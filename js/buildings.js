@@ -27,17 +27,18 @@ const BUILDINGS = {
         desc: '提供更高收入，但建造成本更高。建造需要2回合。',
         combatNotes: '所有建筑享有25%的伤害减免。',
         cost: 200,
-        income: 35,
+        income: 45,
         maxHealth: 180,
         buildTime: 2,
         category: 'economy'
     },
     tradingPost: {
         name: '贸易站',
-        desc: '提供高收入，但防御力较弱。建造需要2回合。',
+        desc: '提供随机收入(40~60)，有好有坏。防御力较弱。建造需要2回合。',
         combatNotes: '所有建筑享有25%的伤害减免。',
         cost: 300,
-        income: 50,
+        income: 50, // 基础值，实际每回合随机40-60
+        randomIncome: { min: 40, max: 60 },
         maxHealth: 130,
         buildTime: 2,
         category: 'economy'
@@ -168,22 +169,46 @@ const BUILDINGS = {
         isUnique: false,
         cannotBuildDirectly: true // 标记此建筑无法直接建造
     },
+    city: {
+        name: '城市',
+        desc: '占地2x2的大型建筑，提供随机收入(-30~100)。建成后所有军事单位每回合可同时移动和攻击。',
+        combatNotes: '所有建筑享有25%的伤害减免。',
+        cost: 700,
+        income: 35, // 基础参考值，实际随机-30~100
+        randomIncome: { min: -30, max: 100 },
+        maxHealth: 400,
+        buildTime: 3,
+        category: 'special',
+        isUnique: false,
+        size: 2, // 2x2占地
+        minDistanceFromCapital: 8,
+        minDistanceBetweenCities: 5,
+        special: {
+            name: '全面行动',
+            effect: '建成后所有军事单位每回合既可以移动，也可以攻击一次'
+        }
+    },
     magicAcademy: {
         name: '魔法学院',
-        desc: '由油车占领敌方领地后有极小概率出现，提供特殊能力。',
+        desc: '强大的魔法建筑，解锁词条系统和魔法兵招募。建造需要5回合。',
         combatNotes: '所有建筑享有25%的伤害减免。',
-        cost: 0, // 无法直接建造，只能通过油车占领获得
+        cost: 3000,
         income: 50,
         maxHealth: 180,
-        buildTime: 0, // 立即建成
+        buildTime: 5,
         category: 'special',
         isUnique: true,
-        cannotBuildDirectly: true, // 标记此建筑无法直接建造
         special: {
             name: '魔法加成',
-            effect: '周围3格范围内的友方单位获得15%的攻击和防御加成'
+            effect: '周围3格范围内的友方单位获得15%的攻击和防御加成，并解锁词条系统'
         }
     }
+};
+
+// 城市占位标记（非锚点格子）
+const CITY_PART_MARKER = {
+    name: '城市',
+    isCityPart: true
 };
 
 // 建筑类别列表

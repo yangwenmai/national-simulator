@@ -46,8 +46,15 @@ function moveUnit(fromX, fromY, toX, toY) {
         return false;
     }
     
-    // 设置单位已经行动过的标记
-    unit.hasActed = true;
+    // 设置行动标记
+    const unitOwner = gameState.players[unit.ownerId];
+    if (playerHasCity(unitOwner)) {
+        // 有城市：移动后仍可攻击
+        unit.hasMoved = true;
+        unit.hasActed = unit.hasAttacked ? true : false;
+    } else {
+        unit.hasActed = true;
+    }
     
     // 更新单位位置
     unit.x = toX;
@@ -128,8 +135,14 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
         return false;
     }
     
-    // 设置单位已经行动过的标记
-    attacker.hasActed = true;
+    // 设置行动标记
+    const atkOwner = gameState.players[attacker.ownerId];
+    if (playerHasCity(atkOwner)) {
+        attacker.hasAttacked = true;
+        attacker.hasActed = attacker.hasMoved ? true : false;
+    } else {
+        attacker.hasActed = true;
+    }
     
     // 计算攻击伤害
     let damage, defender;
@@ -177,58 +190,82 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
         }
     } else if (targetTile.building) {
         // 对敌方建筑造成伤害
-        const targetOwnerId = targetTile.ownerId; // 保存目标所有者ID
-        const buildingType = targetTile.building.type;
-        const buildingName = targetTile.building.name;
+        const targetOwnerId = targetTile.ownerId;
+        let actualBuildingTile = targetTile;
+        
+        // 城市伤害重定向：如果攻击的是城市非锚点部分，将伤害转移到锚点
+        if (targetTile.building.type === 'city' && targetTile.building.isCityPart) {
+            const anchorIdx = targetTile.building.cityAnchorY * GRID_WIDTH + targetTile.building.cityAnchorX;
+            actualBuildingTile = gameState.map[anchorIdx];
+        }
+        
+        const buildingType = actualBuildingTile.building.type;
+        const buildingName = actualBuildingTile.building.name;
         const attackerPlayer = gameState.players[attackerOwnerId];
         const defenderPlayer = gameState.players[targetOwnerId];
         
-        // 计算伤害
-        damage = calculateBuildingDamage(attacker, targetTile.building);
+        damage = calculateBuildingDamage(attacker, actualBuildingTile.building);
         
-        // 确保伤害是一个有效数值
         if (isNaN(damage)) {
             console.warn('计算出的建筑伤害值为NaN，已修正为默认值5');
             damage = 5;
         }
         
-        // 获取建筑当前生命值和最大生命值
-        const currentHealth = targetTile.building.health;
+        const currentHealth = actualBuildingTile.building.health;
         const maxHealth = buildingType === 'capital' ? 
             BUILDINGS.capital.maxHealth : 
             BUILDINGS[buildingType].maxHealth;
         
-        // 应用伤害，确保生命值不会小于0
         const newHealth = Math.max(0, currentHealth - damage);
-        targetTile.building.health = newHealth;
+        actualBuildingTile.building.health = newHealth;
         
-        // 检查建筑是否被摧毁（生命值为0）
+        // 同步城市所有部分的血量
+        if (buildingType === 'city' && actualBuildingTile.building.isCityAnchor) {
+            const ax = actualBuildingTile.building.anchorX;
+            const ay = actualBuildingTile.building.anchorY;
+            const cityTiles = [
+                { tx: ax + 1, ty: ay }, { tx: ax, ty: ay + 1 }, { tx: ax + 1, ty: ay + 1 }
+            ];
+            for (const { tx, ty } of cityTiles) {
+                if (tx >= 0 && tx < GRID_WIDTH && ty >= 0 && ty < GRID_HEIGHT) {
+                    const idx = ty * GRID_WIDTH + tx;
+                    if (gameState.map[idx].building && gameState.map[idx].building.type === 'city') {
+                        gameState.map[idx].building.health = newHealth;
+                    }
+                }
+            }
+        }
+        
         if (newHealth <= 0) {
-            // 检查是否是首都
             if (buildingType === 'capital') {
-                // 移除玩家所有建筑和单位
                 destroyAllPlayerAssets(targetOwnerId);
-                
-                // 更新游戏状态
                 checkGameOver();
             }
             
-            // 移除被摧毁的建筑
-            targetTile.building = null;
+            // 城市摧毁：清除所有4个格子
+            if (buildingType === 'city' && actualBuildingTile.building.isCityAnchor) {
+                const ax = actualBuildingTile.building.anchorX;
+                const ay = actualBuildingTile.building.anchorY;
+                const cityTiles = [
+                    { tx: ax, ty: ay }, { tx: ax + 1, ty: ay },
+                    { tx: ax, ty: ay + 1 }, { tx: ax + 1, ty: ay + 1 }
+                ];
+                for (const { tx, ty } of cityTiles) {
+                    if (tx >= 0 && tx < GRID_WIDTH && ty >= 0 && ty < GRID_HEIGHT) {
+                        const idx = ty * GRID_WIDTH + tx;
+                        gameState.map[idx].building = null;
+                    }
+                }
+            } else {
+                actualBuildingTile.building = null;
+            }
             
-            // 更新游戏日志
             addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}摧毁了${defenderPlayer.name}的${buildingName}，造成了${isNaN(damage) ? 0 : damage}点伤害。`);
-            
             showNotification(`敌方${buildingName}被摧毁！`, 'success');
         } else {
-            // 建筑受损但未被摧毁
-            // 更新游戏日志
             addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}攻击了${defenderPlayer.name}的${buildingName}，造成了${isNaN(damage) ? 0 : damage}点伤害（剩余生命：${newHealth}/${maxHealth}）。`);
-            
             showNotification(`对敌方${buildingName}造成${isNaN(damage) ? 0 : damage}点伤害！`, 'info');
-            
-            // 更新建筑损伤状态对收益的影响
-            updateBuildingDamageEffect(targetTile, defenderPlayer);
+            updateBuildingDamageEffect(actualBuildingTile, defenderPlayer);
         }
     } else {
         showNotification('没有目标可以攻击！', 'error');
@@ -285,8 +322,21 @@ function calculateDamage(attacker, defender) {
         defender.reflectionBuff = false;
     }
     
+    // 词条：攻击强化 +20%
+    const attackerPlayer = gameState.players[attacker.ownerId];
+    if (attackerPlayer.enchantments && attackerPlayer.enchantments.includes('attackBoost')) {
+        attackPower = Math.floor(attackPower * 1.2);
+    }
+    
+    // 词条：防御强化 +20%（对防御方生效）
+    let adjustedDefense = defensePower;
+    const defenderPlayer = gameState.players[defender.ownerId];
+    if (defenderPlayer.enchantments && defenderPlayer.enchantments.includes('defenseBoost')) {
+        adjustedDefense = Math.floor(adjustedDefense * 1.2);
+    }
+    
     // 计算基础伤害（攻击力与防御力的差值，但最小为5）
-    let damage = Math.max(attackPower - defensePower, 5);
+    let damage = Math.max(attackPower - adjustedDefense, 5);
     
     // 检查指挥单位光环效果
     damage = applyCommandUnitEffect(attacker, damage);
@@ -405,6 +455,21 @@ function calculateBuildingDamage(attacker, building) {
         damage *= 2.0; // 轰炸机对建筑伤害翻倍
     }
     
+    // 词条：精准打击 - 对建筑伤害+30%
+    const atkPlayer = gameState.players[attacker.ownerId];
+    if (atkPlayer.enchantments && atkPlayer.enchantments.includes('siegeMaster')) {
+        damage *= 1.3;
+    }
+    
+    // 词条：魔法屏障 - 建筑额外+15%伤害减免（需要找到建筑所属玩家）
+    const buildingOwnerTile = gameState.map.find(t => t.building === building);
+    if (buildingOwnerTile && buildingOwnerTile.ownerId !== null) {
+        const defPlayer = gameState.players[buildingOwnerTile.ownerId];
+        if (defPlayer && defPlayer.enchantments && defPlayer.enchantments.includes('magicBarrier')) {
+            damage *= 0.85;
+        }
+    }
+    
     // 检查魔法学院光环效果
     damage = applyMagicAcademyEffect(attacker, damage);
     
@@ -419,8 +484,10 @@ function updateBuildingDamageEffect(tile, player) {
     const building = tile.building;
     const buildingType = building.type;
     
-    // 只处理有收入的建筑
-    if (!BUILDINGS[buildingType] || BUILDINGS[buildingType].income <= 0) return;
+    // 只处理有收入的建筑（包括有随机收入的建筑）
+    if (!BUILDINGS[buildingType]) return;
+    if (BUILDINGS[buildingType].income <= 0 && !BUILDINGS[buildingType].randomIncome) return;
+    if (building.isCityPart) return; // 城市非锚点不处理
     
     // 获取建筑最大健康值
     let maxHealth;
@@ -563,7 +630,15 @@ function recruitUnit(x, y, unitType) {
     // 检查招募限制
     if (unitInfo.requiredBuildings) {
         // 处理需要多个建筑的情况 (如教官单位或油车)
-        const requiredBuildings = unitInfo.requiredBuildings;
+        let requiredBuildings = [...unitInfo.requiredBuildings];
+        
+        // 词条：特殊征召 - 魔法兵无需魔法学院前置
+        if (unitType === 'magicSoldier' && 
+            currentPlayer.enchantments && 
+            currentPlayer.enchantments.includes('specialRecruit')) {
+            requiredBuildings = requiredBuildings.filter(b => b !== 'magicAcademy');
+        }
+        
         let hasAllRequiredBuildings = true;
         let missingBuildings = [];
         

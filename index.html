@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>国家对战模拟器 | National Battle Simulator</title>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=1.2">
     <style>
         /* 反馈按钮样式 - 气泡样式 */
         .feedback-btn {
@@ -48,6 +48,7 @@
                     <div class="tabs">
                         <button class="tab active" onclick="openTab('building-tab')">建造</button>
                         <button class="tab" onclick="openTab('military-tab')">军事</button>
+                        <button class="tab" onclick="openTab('enchantment-tab')">词条</button>
                     </div>
                     
                     <div id="building-tab" class="tab-content active">
@@ -70,6 +71,10 @@
                             </div>
                             <div id="unit-preview-cost"></div>
                         </div>
+                    </div>
+                    
+                    <div id="enchantment-tab" class="tab-content">
+                        <div id="enchantment-options"></div>
                     </div>
                 </div>
             </div>
@@ -120,18 +125,21 @@
     
     <div class="game-notification" id="notification"></div>
     
+    <!-- 地图悬浮提示框 -->
+    <div id="map-tooltip" class="map-tooltip"></div>
+    
     <!-- 反馈按钮 - 改为支持开发者图标 -->
     <button class="feedback-btn" id="float-feedback-btn" title="支持开发者">❤️</button>
     
     <!-- 游戏脚本 -->
-    <script src="js/constants.js?v=1.1"></script>
-    <script src="js/buildings.js?v=1.1"></script>
-    <script src="js/units.js?v=1.1"></script>
-    <script src="js/utils.js?v=1.1"></script>
-    <script src="js/map.js?v=1.1"></script>
-    <script src="js/rendering.js?v=1.1"></script>
-    <script src="js/combat.js?v=1.1"></script>
-    <script src="js/ui.js?v=1.1"></script>
-    <script src="js/game.js?v=1.1"></script>
+    <script src="js/constants.js?v=1.2"></script>
+    <script src="js/buildings.js?v=1.2"></script>
+    <script src="js/units.js?v=1.2"></script>
+    <script src="js/utils.js?v=1.2"></script>
+    <script src="js/map.js?v=1.2"></script>
+    <script src="js/rendering.js?v=1.2"></script>
+    <script src="js/combat.js?v=1.2"></script>
+    <script src="js/ui.js?v=1.2"></script>
+    <script src="js/game.js?v=1.2"></script>
 </body>
 </html> 

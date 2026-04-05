@@ -74,6 +74,17 @@ function drawMap() {
         }
     }
     
+    // 绘制高亮格子
+    for (let i = 0; i < gameState.map.length; i++) {
+        const tile = gameState.map[i];
+        if (tile.highlight) {
+            const hx = tile.x * cellWidth;
+            const hy = tile.y * cellHeight;
+            ctx.fillStyle = tile.highlight.color;
+            ctx.fillRect(hx, hy, cellWidth, cellHeight);
+        }
+    }
+    
     // 绘制国家边界
     drawBorders(cellWidth, cellHeight);
     
@@ -83,19 +94,23 @@ function drawMap() {
         const x = tile.x * cellWidth;
         const y = tile.y * cellHeight;
         
-        // 绘制建筑
+        // 绘制建筑（城市非锚点部分跳过，由锚点统一绘制）
         if (tile.building) {
-            // 如果建筑没有健康值，初始化一个默认值
             if (tile.building.health === undefined) {
                 if (tile.building.type === 'capital') {
-                    tile.building.health = 350; // 首都有350生命值
+                    tile.building.health = 350;
                 } else if (BUILDINGS[tile.building.type]) {
                     tile.building.health = BUILDINGS[tile.building.type].maxHealth;
                 } else {
-                    tile.building.health = 200; // 默认健康值
+                    tile.building.health = 200;
                 }
             }
-            drawBuilding(tile, x, y, cellWidth, cellHeight);
+            
+            if (tile.building.isCityPart) {
+                // 城市非锚点部分不单独绘制
+            } else {
+                drawBuilding(tile, x, y, cellWidth, cellHeight);
+            }
         }
         
         // 绘制军事单位
@@ -161,38 +176,52 @@ function drawMap() {
         gameState.buildingQueue.forEach(buildingProgress => {
             const x = buildingProgress.x * cellWidth;
             const y = buildingProgress.y * cellHeight;
+            const isCity = buildingProgress.isCity;
+            const areaWidth = isCity ? cellWidth * 2 : cellWidth;
+            const areaHeight = isCity ? cellHeight * 2 : cellHeight;
             
             // 绘制建筑施工区域
-            ctx.fillStyle = 'rgba(255, 235, 59, 0.3)'; // 黄色半透明
-            ctx.fillRect(x + 5, y + 5, cellWidth - 10, cellHeight - 10);
+            ctx.fillStyle = 'rgba(255, 235, 59, 0.3)';
+            ctx.fillRect(x + 3, y + 3, areaWidth - 6, areaHeight - 6);
             
-            // 添加明显的"施工中"标志
-            ctx.fillStyle = 'rgba(255, 152, 0, 0.6)'; // 橙色半透明
+            // 施工中标志
+            ctx.fillStyle = 'rgba(255, 152, 0, 0.6)';
             ctx.beginPath();
             ctx.moveTo(x + 5, y + 5);
             ctx.lineTo(x + 25, y + 5);
             ctx.lineTo(x + 5, y + 25);
             ctx.fill();
             
-            // 显示建筑图标 - 灰色的建筑形状
-            const buildingType = buildingProgress.type;
-            drawBuildingInProgress(buildingType, x, y, cellWidth, cellHeight, buildingProgress.ownerId);
+            if (isCity) {
+                // 城市施工中：绘制大的虚线框和"城"字
+                ctx.strokeStyle = 'rgba(255, 152, 0, 0.8)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 3]);
+                ctx.strokeRect(x + 5, y + 5, areaWidth - 10, areaHeight - 10);
+                ctx.setLineDash([]);
+                
+                ctx.fillStyle = 'rgba(170, 170, 170, 0.8)';
+                ctx.font = `bold ${cellWidth * 0.4}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('城', x + areaWidth / 2, y + areaHeight / 2 - 10);
+            } else {
+                const buildingType = buildingProgress.type;
+                drawBuildingInProgress(buildingType, x, y, cellWidth, cellHeight, buildingProgress.ownerId);
+            }
             
             // 绘制建造进度条
             const progress = buildingProgress.progress;
             const progressBarHeight = 8;
-            const progressBarWidth = cellWidth - 10;
-            const progressBarY = y + cellHeight - progressBarHeight - 5;
+            const progressBarWidth = areaWidth - 10;
+            const progressBarY = y + areaHeight - progressBarHeight - 5;
             
-            // 进度条背景
             ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
             ctx.fillRect(x + 5, progressBarY, progressBarWidth, progressBarHeight);
             
-            // 进度条填充
             ctx.fillStyle = gameState.players[buildingProgress.ownerId].color.main;
             ctx.fillRect(x + 5, progressBarY, progressBarWidth * (progress / 100), progressBarHeight);
             
-            // 进度条边框
             ctx.strokeStyle = '#333';
             ctx.lineWidth = 1;
             ctx.strokeRect(x + 5, progressBarY, progressBarWidth, progressBarHeight);
@@ -382,7 +411,89 @@ function drawBuilding(tile, x, y, cellWidth, cellHeight) {
     // 绘制建筑图形
     const type = building.type;
     
-    if (type === 'capital') {
+    if (type === 'city' && building.isCityAnchor) {
+        // 绘制城市（2x2跨格）
+        const cityWidth = cellWidth * 2;
+        const cityHeight = cellHeight * 2;
+        const margin = cellWidth * 0.08;
+        
+        // 城市主体背景
+        ctx.fillRect(x + margin, y + margin, cityWidth - margin * 2, cityHeight - margin * 2);
+        
+        // 城墙边框
+        ctx.strokeStyle = tile.ownerId !== null ? gameState.players[tile.ownerId].color.dark : '#666';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + margin, y + margin, cityWidth - margin * 2, cityHeight - margin * 2);
+        
+        // 城市内部建筑群
+        const innerMargin = cellWidth * 0.2;
+        ctx.fillStyle = tile.ownerId !== null ? gameState.players[tile.ownerId].color.dark : '#888';
+        
+        // 左上：塔楼
+        ctx.fillRect(x + innerMargin, y + innerMargin, cellWidth * 0.4, cellHeight * 0.5);
+        ctx.fillRect(x + innerMargin + cellWidth * 0.1, y + innerMargin - cellHeight * 0.1, cellWidth * 0.2, cellHeight * 0.1);
+        
+        // 右上：大厅
+        ctx.fillRect(x + cellWidth + innerMargin * 0.5, y + innerMargin, cellWidth * 0.6, cellHeight * 0.6);
+        
+        // 左下：住宅
+        ctx.fillRect(x + innerMargin, y + cellHeight + innerMargin * 0.3, cellWidth * 0.5, cellHeight * 0.4);
+        
+        // 右下：市场
+        ctx.fillRect(x + cellWidth + innerMargin * 0.5, y + cellHeight + innerMargin * 0.3, cellWidth * 0.5, cellHeight * 0.4);
+        
+        // 中心广场
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(x + cellWidth * 0.7, y + cellHeight * 0.7, cellWidth * 0.6, cellHeight * 0.6);
+        
+        // 城市名称
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${cellWidth * 0.3}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('城', x + cityWidth / 2, y + cityHeight / 2);
+        
+        // 绘制城市血条（跨2格宽度）
+        const barWidth = cityWidth * 0.8;
+        const barHeight = 6;
+        const barX = x + (cityWidth - barWidth) / 2;
+        const barY = y + cityHeight - 12;
+        
+        const maxHealth = BUILDINGS.city.maxHealth;
+        const currentHealth = Math.max(0, building.health);
+        const healthPercentage = Math.max(0, Math.min(1, currentHealth / maxHealth));
+        
+        ctx.fillStyle = '#ddd';
+        ctx.fillRect(barX, barY, barWidth, barHeight);
+        
+        if (healthPercentage > 0.7) ctx.fillStyle = '#4CAF50';
+        else if (healthPercentage > 0.3) ctx.fillStyle = '#FFC107';
+        else ctx.fillStyle = '#F44336';
+        
+        if (healthPercentage > 0) {
+            ctx.fillRect(barX, barY, barWidth * healthPercentage, barHeight);
+        }
+        
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(barX, barY, barWidth, barHeight);
+        
+        // 城市名称标签（绘制在左上角格子顶部）
+        const cityLabelSize = Math.max(9, Math.min(12, cellWidth * 0.3));
+        ctx.save();
+        ctx.font = `bold ${cityLabelSize}px "Microsoft YaHei", Arial, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+        ctx.lineWidth = 2.5;
+        ctx.lineJoin = 'round';
+        ctx.strokeText('城市', x + cityWidth / 2, y + 3);
+        ctx.fillStyle = '#fff';
+        ctx.fillText('城市', x + cityWidth / 2, y + 3);
+        ctx.restore();
+        
+        return; // 城市已绘制完毕，不需要后续的健康条绘制
+    } else if (type === 'capital') {
         // 绘制首都（城堡）
         const margin = cellWidth * 0.1;
         const buildingWidth = cellWidth * 0.8;
@@ -459,6 +570,9 @@ function drawBuilding(tile, x, y, cellWidth, cellHeight) {
     
     // 绘制健康值条
     drawHealthBar(x, y, cellWidth, cellHeight, building);
+    
+    // 绘制建筑名称标签
+    drawBuildingLabel(type, x, y, cellWidth, cellHeight, tile.ownerId);
 }
 
 // 绘制单位
@@ -577,11 +691,26 @@ function drawUnit(tile, x, y, cellWidth, cellHeight) {
     // 绘制健康值条
     drawUnitHealthBar(x, y, cellWidth, cellHeight, unit);
     
-    // 如果单位已经使用过，添加一个视觉指示
+    // 绘制单位名称标签
+    drawUnitLabel(type, x, y, cellWidth, cellHeight, unit.ownerId);
+    
+    // 如果单位已经使用过，添加视觉指示
     if (unit.hasActed) {
         ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         ctx.beginPath();
         ctx.arc(x + cellWidth / 2, y + cellHeight / 2, 5, 0, Math.PI * 2);
+        ctx.fill();
+    } else if (unit.hasMoved && !unit.hasAttacked) {
+        // 有城市的玩家：已移动但未攻击 — 半透明标记
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+        ctx.beginPath();
+        ctx.arc(x + cellWidth / 2, y + cellHeight / 2, 4, 0, Math.PI * 2);
+        ctx.fill();
+    } else if (unit.hasAttacked && !unit.hasMoved) {
+        // 有城市的玩家：已攻击但未移动
+        ctx.fillStyle = 'rgba(231, 76, 60, 0.4)';
+        ctx.beginPath();
+        ctx.arc(x + cellWidth / 2, y + cellHeight / 2, 4, 0, Math.PI * 2);
         ctx.fill();
     }
     
@@ -688,4 +817,56 @@ function drawUnitHealthBar(x, y, cellWidth, cellHeight, unit) {
     ctx.strokeStyle = '#333';
     ctx.lineWidth = 0.5;
     ctx.strokeRect(barX, barY, barWidth, barHeight);
-} 
+}
+
+// 绘制建筑名称标签
+function drawBuildingLabel(type, x, y, cellWidth, cellHeight, ownerId) {
+    const bDef = BUILDINGS[type];
+    if (!bDef) return;
+
+    const label = bDef.name;
+    const fontSize = Math.max(8, Math.min(11, cellWidth * 0.28));
+
+    ctx.save();
+    ctx.font = `bold ${fontSize}px "Microsoft YaHei", Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+
+    const labelX = x + cellWidth / 2;
+    const labelY = y + 2;
+
+    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(label, labelX, labelY);
+
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, labelX, labelY);
+    ctx.restore();
+}
+
+// 绘制单位名称标签
+function drawUnitLabel(type, x, y, cellWidth, cellHeight, ownerId) {
+    const uDef = UNITS[type];
+    if (!uDef) return;
+
+    const label = uDef.name;
+    const fontSize = Math.max(7, Math.min(10, cellWidth * 0.24));
+
+    ctx.save();
+    ctx.font = `bold ${fontSize}px "Microsoft YaHei", Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+
+    const labelX = x + cellWidth / 2;
+    const labelY = y + 1;
+
+    ctx.strokeStyle = 'rgba(0,0,0,0.7)';
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(label, labelX, labelY);
+
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, labelX, labelY);
+    ctx.restore();
+}
