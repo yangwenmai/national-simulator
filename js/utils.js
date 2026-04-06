@@ -6,8 +6,8 @@ function showNotification(message, type = 'info') {
     const notification = document.getElementById('notification');
     notification.textContent = message;
     
-    // 设置通知颜色
-    notification.style.backgroundColor = NOTIFICATION_TYPES[type].color;
+    const noteCfg = NOTIFICATION_TYPES[type] || NOTIFICATION_TYPES.info;
+    notification.style.backgroundColor = noteCfg.color;
     
     // 显示通知
     notification.classList.add('show');
@@ -20,7 +20,7 @@ function showNotification(message, type = 'info') {
     // 设置自动隐藏
     notificationTimeout = setTimeout(() => {
         notification.classList.remove('show');
-    }, NOTIFICATION_TYPES[type].duration);
+    }, noteCfg.duration);
 }
 
 // 添加游戏日志条目
@@ -134,17 +134,22 @@ function openTab(tabId) {
 }
 
 // 扩张领土
-function expandTerritory(x, y, playerId) {
-    // 建筑周围的影响范围
+// options.fixedRadius：若指定则使用该半径（领地扩张器固定 3×3），且不受「领土扩张」词条影响
+function expandTerritory(x, y, playerId, options) {
+    options = options || {};
     let radius = 1;
-    
-    // 词条：领土扩张 - 范围+1
-    const player = gameState.players[playerId];
-    if (player && player.enchantments && player.enchantments.includes('territoryExpand')) {
-        radius = 2;
+
+    if (options.fixedRadius != null) {
+        radius = options.fixedRadius;
+    } else {
+        const player = gameState.players[playerId];
+        if (player && player.enchantments && player.enchantments.includes('territoryExpand')) {
+            radius = 2;
+        }
     }
     
     let expanded = false;
+    const claimedCells = [];
     
     // 遍历周围的格子
     for (let dy = -radius; dy <= radius; dy++) {
@@ -156,8 +161,10 @@ function expandTerritory(x, y, playerId) {
             if (isWithinMapBounds(nx, ny)) {
                 const tile = getTileAt(gameState.map, nx, ny);
                 
-                // 只占领没有所有者的格子
+                // 只占领没有所有者的格子；海盗船所在水域永不因扩张变为领地
                 if (tile && tile.ownerId === null) {
+                    if (tile.building && tile.building.type === 'pirateShip') continue;
+                    claimedCells.push({ x: nx, y: ny });
                     tile.ownerId = playerId;
                     
                     // 设置初始领土控制值
@@ -177,5 +184,61 @@ function expandTerritory(x, y, playerId) {
         drawMap();
     }
     
-    return expanded;
-} 
+    return { expanded, claimedCells };
+}
+
+// 领地扩张器被拆除或摧毁时：收回其当时圈下的无主格（仍为该玩家领地的才清除）
+function revertTerritoryExpanderClaims(centerX, centerY, claimedCells, playerId) {
+    let cells = claimedCells;
+    if (!cells || cells.length === 0) {
+        const r = BUILDINGS.territoryExpander && BUILDINGS.territoryExpander.fixedTerritoryRadius != null
+            ? BUILDINGS.territoryExpander.fixedTerritoryRadius
+            : 1;
+        cells = [];
+        for (let dy = -r; dy <= r; dy++) {
+            for (let dx = -r; dx <= r; dx++) {
+                const nx = centerX + dx;
+                const ny = centerY + dy;
+                if (isWithinMapBounds(nx, ny)) {
+                    cells.push({ x: nx, y: ny });
+                }
+            }
+        }
+    }
+    let reverted = false;
+    for (const c of cells) {
+        const tile = getTileAt(gameState.map, c.x, c.y);
+        if (!tile || tile.ownerId !== playerId) continue;
+        const isCenter = c.x === centerX && c.y === centerY;
+        // 中心格已拆掉扩张器；外圈若后来建了建筑或站着单位，则不收回该格以免悬空逻辑
+        if (!isCenter && (tile.building || tile.unit)) continue;
+        tile.ownerId = null;
+        reverted = true;
+    }
+    if (reverted) {
+        updateGameStateDisplay();
+        drawMap();
+    }
+}
+
+/** 建筑类型对应的最大生命（用于扣血、迁都继承等） */
+function getBuildingMaxHealthForType(buildingType) {
+    if (buildingType === 'capital') return BUILDINGS.capital.maxHealth;
+    if (BUILDINGS[buildingType]) return BUILDINGS[buildingType].maxHealth;
+    return 200;
+}
+
+/**
+ * 扣血前将 building.health 规范为有限值；缺失或非数字时视为满血。
+ * 避免 undefined/NaN 导致迁都时 `health || max` 误判为满血 350。
+ */
+function ensureFiniteBuildingHealthBeforeDamage(building) {
+    if (!building || !building.type) return;
+    const maxH = getBuildingMaxHealthForType(building.type);
+    const h = building.health;
+    if (typeof h !== 'number' || !Number.isFinite(h)) {
+        building.health = maxH;
+    } else {
+        building.health = Math.min(maxH, Math.max(0, h));
+    }
+}

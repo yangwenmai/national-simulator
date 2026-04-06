@@ -71,8 +71,9 @@ function initUI() {
         feedbackBtn.addEventListener('click', showFeedbackForm);
     }
     
-    // 刷新游戏状态显示
+    // 刷新游戏状态显示与按钮说明系统
     updateGameStateDisplay();
+    initControlHelpSystem();
 }
 
 // updateResourceDisplay是updatePlayerStats的别名，用于在更新玩家收入后刷新资源显示
@@ -297,6 +298,199 @@ function updatePlayerStats() {
     }
 }
 
+// 是否存在可招募医生的医院格（己方、无单位、本回合该医院未招过医生）
+function playerHasDoctorRecruitSlot(player) {
+    const used = gameState.factoryProduction.hospitalDoctorRecruitKeys || [];
+    for (let i = 0; i < gameState.map.length; i++) {
+        const t = gameState.map[i];
+        if (t.ownerId !== player.id || !t.building) continue;
+        if (t.building.type !== 'hospital' && t.building.type !== 'bigHospital') continue;
+        if (t.unit) continue;
+        const key = `${t.x},${t.y}`;
+        if (used.includes(key)) continue;
+        return true;
+    }
+    return false;
+}
+
+function syncMilitaryActionButtons() {
+    const attackBtn = document.getElementById('attack-btn');
+    const moveBtn = document.getElementById('move-btn');
+    if (!attackBtn || !moveBtn) return;
+    
+    moveBtn.dataset.helpShort = '移动己方单位：进入移动模式后，点选蓝色高亮内的空地（受地形、建筑、他人单位限制）。';
+    moveBtn.dataset.helpLong = '请先在地图上选中一枚己方单位。点击「移动」后，地图标出可达范围；再点目标格完成移动。拥有「城市」时，本回合通常还可再攻击或治疗。油车、水域等有额外规则。';
+    
+    const u = gameState.selectedUnit;
+    if (!u || u.ownerId !== gameState.currentPlayerIndex) {
+        attackBtn.textContent = '攻击';
+        moveBtn.disabled = false;
+        attackBtn.disabled = false;
+        attackBtn.dataset.helpShort = '攻击：选中己方单位后使用，对敌方单位或建筑造成伤害（医生显示为「治疗」）。';
+        attackBtn.dataset.helpLong = '先在地图上点选己方军事单位，再点本按钮。进入模式后红色区域为普攻/射程；点合法敌方目标。医生为绿色治疗范围，点受伤友军。海盗船等部分建筑己方也可摧毁。';
+        return;
+    }
+    
+    const def = UNITS[u.type];
+    const isHealer = def && def.isHealer;
+    attackBtn.textContent = isHealer ? '治疗' : '攻击';
+    
+    if (isHealer) {
+        attackBtn.dataset.helpShort = '治疗友军：绿圈内点选受伤的己方军事单位，每回合一次。';
+        attackBtn.dataset.helpLong = '医生无法攻击敌人。进入后在治疗距离内点击己方受伤单位恢复生命（具体数值见单位说明）。与「城市」效果叠加时，可先移动再治疗。';
+    } else {
+        attackBtn.dataset.helpShort = '攻击敌人：在攻击/射程高亮内点选敌方单位或建筑。';
+        attackBtn.dataset.helpLong = '进入攻击模式后，点选范围内的敌方单位或建筑（首都、导弹工厂等）。不同兵种射程不同；轰炸机、火炮可远程。不能直接打己方普通建筑。';
+    }
+    
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    const hasCity = playerHasCity(currentPlayer);
+    if (hasCity) {
+        moveBtn.disabled = !!u.hasMoved;
+        attackBtn.disabled = !!u.hasAttacked;
+    } else {
+        const done = !!u.hasActed;
+        moveBtn.disabled = done;
+        attackBtn.disabled = done;
+    }
+}
+
+// ---------- 界面按钮说明（悬停右侧提示条 + Alt+点击弹出详解）----------
+const UI_HELP_DEFAULT =
+    '💡 把鼠标移到任意按钮或左侧列表项上，这里会说明能做什么。按住 Alt 再点按钮可看更长说明（不会执行该操作）。';
+
+function setGlobalUiHelp(text) {
+    const el = document.getElementById('global-ui-help');
+    if (el) el.textContent = text || UI_HELP_DEFAULT;
+}
+
+function resetGlobalUiHelp() {
+    setGlobalUiHelp(UI_HELP_DEFAULT);
+}
+
+function bindHoverHelp(el, shortText, longText) {
+    if (!el || el.dataset.hoverHelpBound === '1') return;
+    el.dataset.hoverHelpBound = '1';
+    if (longText) el.title = shortText;
+    el.addEventListener('mouseenter', () => setGlobalUiHelp(shortText));
+    el.addEventListener('mouseleave', () => resetGlobalUiHelp());
+    el.addEventListener('focus', () => setGlobalUiHelp(shortText));
+    el.addEventListener('blur', () => resetGlobalUiHelp());
+    if (longText) {
+        el.addEventListener(
+            'click',
+            e => {
+                if (!e.altKey) return;
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                showNotification(longText, 'help');
+            },
+            true
+        );
+    }
+}
+
+function bindDatasetHoverHelp(el) {
+    if (!el || el.dataset.uiHelpBound) return;
+    el.dataset.uiHelpBound = '1';
+    el.addEventListener('mouseenter', () => {
+        const s = el.getAttribute('data-help-short');
+        if (s) setGlobalUiHelp(s);
+    });
+    el.addEventListener('mouseleave', () => resetGlobalUiHelp());
+    el.addEventListener('focus', () => {
+        const s = el.getAttribute('data-help-short');
+        if (s) setGlobalUiHelp(s);
+    });
+    el.addEventListener('blur', () => resetGlobalUiHelp());
+    el.addEventListener(
+        'click',
+        e => {
+            if (!e.altKey) return;
+            const longT = el.getAttribute('data-help-long');
+            if (!longT) return;
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            showNotification(longT, 'help');
+        },
+        true
+    );
+}
+
+function initControlHelpSystem() {
+    resetGlobalUiHelp();
+
+    bindHoverHelp(
+        document.getElementById('end-turn-btn'),
+        '结束回合：结算本回合建造进度、医院、防御塔、海盗等，然后轮到下一个玩家。',
+        '点击后立即结束当前玩家回合。会推进建筑队列、医院治疗、塔防、油车、海盗移动与攻击、导弹工厂等阶段，再切换行动方并发放下家回合收入。未用完的行动机会将作废。'
+    );
+    bindHoverHelp(
+        document.getElementById('cancel-action-btn'),
+        '取消当前模式：退出建造、移动、攻击/治疗、招募、修建筑或导弹瞄准。',
+        '正在建造选址、移动、攻击、招募单位、修理建筑或瞄准导弹时，点此恢复普通选格状态，不扣资源。'
+    );
+    bindHoverHelp(
+        document.getElementById('new-game-btn'),
+        '新游戏：选择人数、是否电脑、地图大小并开始一局。',
+        '打开设置面板，可配置 2～5 人、哪些席位为 AI、地图尺寸。确认后会重置地图与资源；当前对局进度将丢失。'
+    );
+
+    bindDatasetHoverHelp(document.getElementById('attack-btn'));
+    bindDatasetHoverHelp(document.getElementById('move-btn'));
+
+    bindHoverHelp(
+        document.getElementById('view-fit-btn'),
+        '适应窗口：缩放地图以在窗口内看全图。',
+        '按画布可用高度自动缩放格子，适合总览形势；卷动条会关闭，地图居中显示。'
+    );
+    bindHoverHelp(
+        document.getElementById('view-scroll-btn'),
+        '原始大小：一格一格原始像素，可拖拽卷动看大地图。',
+        '以固定像素尺寸绘制格子，大地图会出现滚动条，可按住画布区域拖拽平移。'
+    );
+
+    document.querySelectorAll('#left-panel .tabs .tab').forEach(tab => {
+        if (tab.dataset.helpTabBound === '1') return;
+        tab.dataset.helpTabBound = '1';
+        const label = (tab.textContent || '').trim();
+        let shortT = '';
+        let longT = '';
+        if (label === '建造') {
+            shortT = '建造页：选建筑类型，再在己方地图绿格上放置（扣金、多回合完工）。';
+            longT = '列出经济、军事、防御等建筑。点选一种后进入建造模式，可放置格会高亮；多数需在自己领土上；经济类中有「领地扩张器」可建无主陆地（琥珀高亮）；矿场要山地、海盗船要无主水域。部分建筑唯一或需前置。';
+        } else if (label === '军事') {
+            shortT = '军事页：招募单位，再在地图高亮格上生成（医生仅医院格）。';
+            longT = '按兵种分类，需先有兵营/工厂/医院等前提。点击单位后进入招募模式，蓝色或绿色标出可放置格；每回合各工厂有招募上限。';
+        } else if (label === '词条') {
+            shortT = '词条页：拥有魔法学院时可花金币购买全局被动强化。';
+            longT = '每条为一次性购买、全局生效的加成（如攻击、收入、建造加速）。需先建造魔法学院才会出现可买列表；已拥有会标明。';
+        }
+        if (shortT) {
+            tab.title = shortT;
+            tab.addEventListener('mouseenter', () => setGlobalUiHelp(shortT));
+            tab.addEventListener('mouseleave', () => resetGlobalUiHelp());
+            tab.addEventListener('click', e => {
+                if (!e.altKey) return;
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                showNotification(longT, 'help');
+            }, true);
+        }
+    });
+
+    const fb = document.getElementById('float-feedback-btn');
+    if (fb) {
+        bindHoverHelp(
+            fb,
+            '支持开发者：打赏/联系方式（微信、Twitter 等）。',
+            '打开小窗口，可选微信、Twitter 或 Coffee 等方式联系或支持作者。'
+        );
+    }
+
+    syncMilitaryActionButtons();
+}
+
 // 更新选中信息
 function updateSelectionInfo() {
     const infoContainer = document.getElementById('selection-info');
@@ -354,6 +548,15 @@ function updateSelectionInfo() {
             
             buildingInfo.appendChild(healthInfo);
             
+            if (building.type === 'pirateShip' && building.placedByPlayerId != null) {
+                const builder = gameState.players[building.placedByPlayerId];
+                const psNote = document.createElement('p');
+                psNote.textContent = `建造者: ${builder.name} · 此格水域不作为任何玩家领地`;
+                psNote.style.fontSize = '12px';
+                psNote.style.color = '#7f8c8d';
+                buildingInfo.appendChild(psNote);
+            }
+            
             // 如果有收入，显示收入
             if (building.type && BUILDINGS[building.type] && 
                 (BUILDINGS[building.type].income > 0 || BUILDINGS[building.type].randomIncome)) {
@@ -387,7 +590,7 @@ function updateSelectionInfo() {
             }
             
             // 如果是当前玩家的建筑且受损，显示修理按钮（需要修理厂）
-            if (mapTile.ownerId === gameState.currentPlayerIndex && healthPercent < 100) {
+            if (getTileBuildingOwnerId(mapTile) === gameState.currentPlayerIndex && healthPercent < 100) {
                 const hasShop = playerHasRepairShop(currentPlayer);
                 const healthPercentLost = 1 - (building.health / maxHealth);
                 const repairCost = getRepairCost(building.type, healthPercentLost);
@@ -414,7 +617,7 @@ function updateSelectionInfo() {
             }
             
             // 如果是导弹工厂，显示导弹工厂专属面板
-            if (building.type === 'missileFactory' && mapTile.ownerId === gameState.currentPlayerIndex) {
+            if (building.type === 'missileFactory' && getTileBuildingOwnerId(mapTile) === gameState.currentPlayerIndex) {
                 const missilePanel = document.createElement('div');
                 missilePanel.style.marginTop = '8px';
                 missilePanel.style.padding = '8px';
@@ -472,8 +675,107 @@ function updateSelectionInfo() {
                 buildingInfo.appendChild(missilePanel);
             }
             
+            // 首都：紧急迁都（需至少一座城市）
+            if (
+                building.type === 'capital' &&
+                getTileBuildingOwnerId(mapTile) === gameState.currentPlayerIndex
+            ) {
+                const cities = getCityPositions(currentPlayer);
+                const relocateWrap = document.createElement('div');
+                relocateWrap.style.marginTop = '8px';
+                relocateWrap.style.padding = '8px';
+                relocateWrap.style.backgroundColor = '#fdf6e3';
+                relocateWrap.style.borderRadius = '6px';
+                relocateWrap.style.border = '1px solid #e6d7a2';
+                const rTitle = document.createElement('p');
+                rTitle.style.margin = '0 0 6px 0';
+                rTitle.style.fontSize = '12px';
+                rTitle.style.color = '#7d6608';
+                rTitle.textContent =
+                    '紧急迁都：把首都移到一座城市的锚点格（继承当前首都剩余生命；原首都与城市 2×2 清空）。';
+                relocateWrap.appendChild(rTitle);
+                if (cities.length === 0) {
+                    const h = document.createElement('p');
+                    h.style.fontSize = '11px';
+                    h.style.color = '#95a5a6';
+                    h.style.margin = '0';
+                    h.textContent = '你还没有城市，无法迁都（需先建造城市）。';
+                    relocateWrap.appendChild(h);
+                } else {
+                    const sel = document.createElement('select');
+                    sel.style.width = '100%';
+                    sel.style.padding = '4px';
+                    sel.style.marginBottom = '6px';
+                    cities.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = `${p.x},${p.y}`;
+                        opt.textContent = `城市锚点 (${p.x}, ${p.y})`;
+                        sel.appendChild(opt);
+                    });
+                    const rBtn = document.createElement('button');
+                    rBtn.textContent = '迁都至所选城市';
+                    rBtn.style.backgroundColor = '#9b59b6';
+                    rBtn.style.width = '100%';
+                    rBtn.addEventListener('click', () => {
+                        const [cx, cy] = sel.value.split(',').map(Number);
+                        const msg =
+                            '确定迁都？\n\n' +
+                            '· 原首都格变为空地（领土仍归你）。\n' +
+                            '· 所选城市 2×2 清空，在锚点出现新首都；不再享受「城市」移动+攻击效果。\n' +
+                            '· 新首都生命 = 当前首都剩余生命（不超过上限）。\n' +
+                            '· 目标 2×2 内不能有军事单位。';
+                        if (confirm(msg) && relocateCapitalToCity(cx, cy)) {
+                            gameState.selectedTile = null;
+                            updateSelectionInfo();
+                        }
+                    });
+                    relocateWrap.appendChild(sel);
+                    relocateWrap.appendChild(rBtn);
+                }
+                buildingInfo.appendChild(relocateWrap);
+            }
+            
+            // 城市：快捷迁都入口
+            if (
+                building.type === 'city' &&
+                getTileBuildingOwnerId(mapTile) === gameState.currentPlayerIndex
+            ) {
+                const ax = building.isCityAnchor ? tile.x : building.cityAnchorX;
+                const ay = building.isCityAnchor ? tile.y : building.cityAnchorY;
+                const capPos = getCapitalPosition(currentPlayer);
+                if (
+                    capPos &&
+                    getCityPositions(currentPlayer).length > 0 &&
+                    (capPos.x !== ax || capPos.y !== ay)
+                ) {
+                    const cWrap = document.createElement('div');
+                    cWrap.style.marginTop = '8px';
+                    cWrap.style.padding = '8px';
+                    cWrap.style.backgroundColor = '#eef2ff';
+                    cWrap.style.borderRadius = '6px';
+                    cWrap.style.border = '1px solid #c5cae9';
+                    const cBtn = document.createElement('button');
+                    cBtn.textContent = '将首都迁到本城（锚点）';
+                    cBtn.style.backgroundColor = '#5c6bc0';
+                    cBtn.style.width = '100%';
+                    cBtn.addEventListener('click', () => {
+                        const msg =
+                            '将首都迁到这座城市？\n\n' +
+                            '· 原首都格清空；本城 2×2 清空并在锚点建新首都。\n' +
+                            '· 新首都生命继承现首都剩余值。\n' +
+                            '· 城内及邻格 2×2 不可有单位。';
+                        if (confirm(msg) && relocateCapitalToCity(ax, ay)) {
+                            gameState.selectedTile = null;
+                            updateSelectionInfo();
+                        }
+                    });
+                    cWrap.appendChild(cBtn);
+                    buildingInfo.appendChild(cWrap);
+                }
+            }
+            
             // 如果是当前玩家的建筑（非首都），显示拆除按钮
-            if (mapTile.ownerId === gameState.currentPlayerIndex && building.type !== 'capital') {
+            if (getTileBuildingOwnerId(mapTile) === gameState.currentPlayerIndex && building.type !== 'capital') {
                 const demolishButton = document.createElement('button');
                 const refund = Math.floor(BUILDINGS[building.type].cost * 0.5);
                 demolishButton.textContent = `拆除 (返还¥${refund})`;
@@ -481,7 +783,11 @@ function updateSelectionInfo() {
                 demolishButton.style.marginTop = '4px';
                 
                 demolishButton.addEventListener('click', () => {
-                    if (confirm(`确定要拆除${building.name}吗？将返还${refund}金币。`)) {
+                    const expanderNote =
+                        building.type === 'territoryExpander'
+                            ? ' 该扩张器当时圈下的领地将被收回（外圈若已建有建筑或站着单位则该格保留归属）。'
+                            : '';
+                    if (confirm(`确定要拆除${building.name}吗？将返还${refund}金币。${expanderNote}`)) {
                         demolishBuilding(tile.x, tile.y);
                         gameState.selectedTile = null;
                         updateSelectionInfo();
@@ -530,12 +836,17 @@ function updateSelectionInfo() {
                 
                 for (const adjUnit of adjacentUnits) {
                     if (adjUnit.unit && adjUnit.unit.type !== 'instructor') {
-                        const unitName = UNITS[adjUnit.unit.type].name;
-                        const baseAttack = UNITS[adjUnit.unit.type].attack;
+                        const adjDef = UNITS[adjUnit.unit.type];
+                        const unitName = adjDef.name;
+                        const baseAttack = adjDef.attack;
                         const contributedAttack = Math.floor(baseAttack / 2);
+                        const attackLabel =
+                            adjDef.damagePercentOfTargetMaxHp != null
+                                ? `${adjDef.damagePercentOfTargetMaxHp}%最大生命`
+                                : baseAttack;
                         boostedBy.push({
                             name: unitName,
-                            attack: baseAttack,
+                            attack: attackLabel,
                             contributed: contributedAttack
                         });
                     }
@@ -568,6 +879,8 @@ function updateSelectionInfo() {
                     attackSourceInfo.appendChild(sourceList);
                     unitInfo.appendChild(attackSourceInfo);
                 }
+            } else if (unitType.damagePercentOfTargetMaxHp != null) {
+                statsInfo.textContent = `攻击: 目标最大生命的${unitType.damagePercentOfTargetMaxHp}%（单次至少5） | 防御: ${unitType.defense}`;
             } else if (unit.tacticalGuidanceBoost) {
                 // 战术指导加成的单位
                 const baseAttack = unitType.attack;
@@ -579,6 +892,9 @@ function updateSelectionInfo() {
                 const bonusAtk = unit.bonusAttack || 0;
                 statsInfo.textContent = `攻击: ${actualAtk}${bonusAtk > 0 ? ' [+' + bonusAtk + ']' : ''} | 防御: ${unitType.defense}`;
                 if (bonusAtk > 0) statsInfo.style.color = '#e74c3c';
+            } else if (unit.type === 'doctor') {
+                statsInfo.textContent = `攻击: 无 | 防御: ${unitType.defense}`;
+                statsInfo.style.color = '#27ae60';
             } else {
                 statsInfo.textContent = `攻击: ${unitType.attack} | 防御: ${unitType.defense}`;
             }
@@ -586,7 +902,11 @@ function updateSelectionInfo() {
             
             // 显示移动范围和攻击范围
             const rangeInfo = document.createElement('p');
-            rangeInfo.textContent = `移动范围: ${unitType.moveRange} | 攻击范围: ${unitType.attackRange}`;
+            if (unit.type === 'doctor') {
+                rangeInfo.textContent = `移动范围: ${unitType.moveRange} | 治疗距离: ${unitType.healRange != null ? unitType.healRange : unitType.attackRange}（每回合1次，+${unitType.healAmount}生命）`;
+            } else {
+                rangeInfo.textContent = `移动范围: ${unitType.moveRange} | 攻击范围: ${unitType.attackRange}`;
+            }
             unitInfo.appendChild(rangeInfo);
             
             // 显示战斗信息
@@ -625,10 +945,16 @@ function updateSelectionInfo() {
                 effectInfo.style.marginTop = '4px';
                 effectInfo.innerHTML = `
                     <strong>🔥 嗜血成长</strong><br>
+                    <span style="opacity:0.95">仅本格亲自攻击击杀/拆建筑才叠加；塔、导弹不算。</span><br>
                     击杀单位: ${kills}次 (每次+5攻+10血)<br>
                     摧毁建筑: ${destroys}次 (每次+10攻+5血)<br>
                     累计成长: +${unit.bonusAttack || 0}攻击 +${unit.bonusMaxHealth || 0}生命
                 `;
+                unitInfo.appendChild(effectInfo);
+            } else if (unit.type === 'doctor') {
+                const effectInfo = document.createElement('p');
+                effectInfo.textContent = `特殊效果: ${unitType.special ? unitType.special.effect : '治疗友军'}`;
+                effectInfo.style.color = '#27ae60';
                 unitInfo.appendChild(effectInfo);
             }
             
@@ -640,7 +966,9 @@ function updateSelectionInfo() {
                 
                 if (hasCity) {
                     const moveStatus = unit.hasMoved ? '已移动' : '可移动';
-                    const attackStatus = unit.hasAttacked ? '已攻击' : '可攻击';
+                    const attackStatus = unitType.isHealer
+                        ? (unit.hasAttacked ? '已治疗' : '可治疗')
+                        : (unit.hasAttacked ? '已攻击' : '可攻击');
                     actionInfo.textContent = `状态: ${moveStatus} / ${attackStatus}`;
                     if (!unit.hasMoved || !unit.hasAttacked) {
                         actionInfo.style.color = '#27ae60';
@@ -680,6 +1008,8 @@ function updateSelectionInfo() {
         hideElement('military-actions-panel');
         gameState.selectedUnit = null;
     }
+    
+    syncMilitaryActionButtons();
 }
 
 // 获取指定位置周围的单位
@@ -808,6 +1138,9 @@ function updateBuildingOptions() {
             let extraInfo = '';
             if (buildingType === 'city') {
                 extraInfo = '<div style="font-size:10px;opacity:0.85;">2x2 | 距首都≥8格</div>';
+            } else if (buildingType === 'territoryExpander') {
+                extraInfo =
+                    '<div style="font-size:10px;opacity:0.85;">无主陆地 | 3×3圈地 | 立即建成</div>';
             }
             
             buildingBtn.innerHTML = `
@@ -818,7 +1151,20 @@ function updateBuildingOptions() {
             `;
             
             // 添加建筑详情的悬停提示
-            buildingBtn.title = `${building.name}\n${building.desc}\n建造时间：${building.buildTime}回合\n生命值：${building.maxHealth}\n\n战斗属性：所有建筑享有25%的伤害减免${buildingType === 'capital' ? '，但对轰炸机和重型坦克尤其脆弱' : ''}`;
+            const buildTimeLabel =
+                building.buildTime === 0 ? '立即建成' : `${building.buildTime}回合`;
+            buildingBtn.title = `${building.name}\n${building.desc}\n建造时间：${buildTimeLabel}\n生命值：${building.maxHealth}\n\n战斗属性：所有建筑享有25%的伤害减免${buildingType === 'capital' ? '，但对轰炸机和重型坦克尤其脆弱' : ''}`;
+            
+            buildingBtn.addEventListener('mouseenter', () => {
+                let helpLine = `「${building.name}」${building.desc} — 点击后：在绿色高亮格上选位建造，扣金币并按回合完工。`;
+                if (building.neutralOnly) {
+                    helpLine = `「${building.name}」${building.desc} — 点击后：地图琥珀色高亮无主陆地空位，点选即建（¥${displayCost}，立即建成）。`;
+                } else if (building.waterOnly) {
+                    helpLine = `「${building.name}」${building.desc} — 点击后：地图高亮无主水域空位后点选建造。`;
+                }
+                setGlobalUiHelp(helpLine);
+            });
+            buildingBtn.addEventListener('mouseleave', () => resetGlobalUiHelp());
             
             // 检查当前玩家是否有足够的金币
             if (currentPlayer.gold < displayCost) {
@@ -925,7 +1271,7 @@ function updateMilitaryOptions() {
             unitBtn.innerHTML = `
                 <strong>${unit.name}</strong>
                 <div>¥${unit.cost}</div>
-                <div>攻击: ${unitType === 'instructor' ? '动态' : unit.attack} | 防御: ${unit.defense}</div>
+                <div>攻击: ${getUnitAttackStatDisplay(unitType)} | 防御: ${unit.defense}</div>
             `;
             
             // 添加单位详情的悬停提示
@@ -941,11 +1287,22 @@ function updateMilitaryOptions() {
                 combatNote = '\n战斗属性：对建筑伤害翻倍(×2)，但仍受25%的建筑防御减免';
             } else if (unitType === 'instructor') {
                 combatNote = '\n战斗属性：对建筑造成的伤害会减少25%。攻击力取决于周围最多3个单位的一半攻击力总和';
+            } else if (unitType === 'archer') {
+                combatNote = '\n战斗属性：对单位与建筑均造成目标最大生命35%伤害（单次至少5），不按攻防数值结算；50%概率自伤当前生命50%';
+            } else if (unitType === 'bloodBerserker') {
+                combatNote = '\n战斗属性：成长仅在该单位亲自攻击并完成击杀/拆建筑时触发，防御塔与导弹不计';
             } else {
                 combatNote = '\n战斗属性：对建筑造成的伤害会减少25%';
             }
             
             unitBtn.title = `${unit.name}\n${unit.desc}\n生命值：${unit.health}\n攻击范围：${unit.attackRange} | 移动范围：${unit.moveRange}${specialInfo}${combatNote}`;
+            
+            unitBtn.addEventListener('mouseenter', () => {
+                let line = `「${unit.name}」${unit.desc} — 点击后：在地图高亮格上招募，消耗金币。`;
+                if (unit.recruitFromHospital) line += ' 医生仅可在空医院格招募。';
+                setGlobalUiHelp(line);
+            });
+            unitBtn.addEventListener('mouseleave', () => resetGlobalUiHelp());
             
             // 检查当前玩家是否有足够的金币和所需建筑
             const currentPlayer = gameState.players[gameState.currentPlayerIndex];
@@ -958,8 +1315,13 @@ function updateMilitaryOptions() {
                 reasonCannotRecruit += '金币不足！\n';
             }
             
-            // 检查所需建筑
-            if (unit.requiredBuildings) {
+            // 医生：需有空闲医院格
+            if (unit.recruitFromHospital) {
+                if (!playerHasDoctorRecruitSlot(currentPlayer)) {
+                    canRecruit = false;
+                    reasonCannotRecruit += '需要有空闲的医院格（每座医院每回合仅可招募一名医生）。\n';
+                }
+            } else if (unit.requiredBuildings) {
                 // 多建筑要求
                 let requiredBuildings = [...unit.requiredBuildings];
                 
@@ -1016,17 +1378,17 @@ function updateMilitaryOptions() {
             // 检查嗜血狂魔解锁条件
             if (unit.unlockCondition) {
                 const unlocked = isBloodBerserkerUnlocked(currentPlayer);
-                const recentKills = (currentPlayer.killHistory || []).filter(t => gameState.turn - t < 10).length;
+                const killCount = (currentPlayer.killHistory || []).length;
                 if (!unlocked) {
                     canRecruit = false;
-                    reasonCannotRecruit += `未解锁！击杀进度：${recentKills}/5（近10回合）\n`;
+                    reasonCannotRecruit += `未解锁！消灭进度：${killCount}/5（累计，含塔/导弹）\n`;
                 }
                 // 在按钮上显示解锁进度
-                const progressText = unlocked ? '✅ 已解锁' : `🔒 ${recentKills}/5击杀`;
+                const progressText = unlocked ? '✅ 已解锁' : `🔒 ${killCount}/5消灭`;
                 unitBtn.innerHTML = `
                     <strong>${unit.name}</strong> <span style="font-size:11px;color:${unlocked ? '#27ae60' : '#e67e22'}">${progressText}</span>
                     <div>¥${unit.cost}</div>
-                    <div>攻击: ${unit.attack} | 防御: ${unit.defense} | 生命: ${unit.health}</div>
+                    <div>攻击: ${getUnitAttackStatDisplay(unitType)} | 防御: ${unit.defense} | 生命: ${unit.health}</div>
                 `;
             }
             
@@ -1144,6 +1506,15 @@ function updateEnchantmentOptions() {
         card.appendChild(icon);
         card.appendChild(body);
         card.appendChild(price);
+        
+        card.addEventListener('mouseenter', () => {
+            if (owned) {
+                setGlobalUiHelp(`已拥有「${ench.name}」：${ench.desc}`);
+            } else {
+                setGlobalUiHelp(`「${ench.name}」¥${ench.cost} — ${ench.desc} ${canAfford ? '点击购买。' : '金币不足。'}`);
+            }
+        });
+        card.addEventListener('mouseleave', () => resetGlobalUiHelp());
         
         if (!owned && canAfford) {
             card.addEventListener('click', () => {
@@ -1267,10 +1638,16 @@ function handleBuildModeClick(x, y) {
     
     // 海盗船特殊规则：只能放在无主水域上
     const isWaterOnlyBuilding = BUILDINGS[buildingType] && BUILDINGS[buildingType].waterOnly;
+    const isNeutralOnlyBuilding = BUILDINGS[buildingType] && BUILDINGS[buildingType].neutralOnly;
     
     if (isWaterOnlyBuilding) {
         if (clickedTile.ownerId !== null) {
             showNotification(`${BUILDINGS[buildingType].name}只能建在无主水域上！`, 'error');
+            return;
+        }
+    } else if (isNeutralOnlyBuilding) {
+        if (clickedTile.ownerId !== null) {
+            showNotification(`${BUILDINGS[buildingType].name}只能建在无主土地上（不能有领主）！`, 'error');
             return;
         }
     } else {
@@ -1377,8 +1754,12 @@ function handleAttackModeClick(x, y) {
         return;
     }
     
-    // 攻击目标
-    attackTarget(gameState.selectedUnit.x, gameState.selectedUnit.y, x, y);
+    const su = gameState.selectedUnit;
+    if (UNITS[su.type] && UNITS[su.type].isHealer) {
+        healTarget(su.x, su.y, x, y);
+    } else {
+        attackTarget(su.x, su.y, x, y);
+    }
     
     // 退出攻击模式
     exitAttackMode();
@@ -1544,22 +1925,32 @@ function startAttackMode() {
         return;
     }
     
-    // 有城市时检查是否已攻击
+    const su = gameState.selectedUnit;
+    const def = UNITS[su.type];
+    const isHealer = def && def.isHealer;
+    
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-    if (playerHasCity(currentPlayer) && gameState.selectedUnit.hasAttacked) {
-        showNotification('该单位本回合已攻击！', 'error');
+    if (playerHasCity(currentPlayer) && su.hasAttacked) {
+        showNotification(isHealer ? '该单位本回合已治疗过！' : '该单位本回合已攻击！', 'error');
+        return;
+    }
+    
+    if (!playerHasCity(currentPlayer) && su.hasActed) {
+        showNotification('该单位本回合已行动！', 'error');
         return;
     }
     
     gameState.attackMode = true;
     
-    // 显示取消按钮
     showElement('cancel-action-btn');
     
-    // 显示通知
-    showNotification('选择一个目标来攻击。', 'info');
+    showNotification(
+        isHealer ? '选择范围内受伤的友方军事单位进行治疗。' : '选择一个目标来攻击。',
+        'info'
+    );
     
-    // 重绘以显示攻击范围
+    updateCursor(isHealer ? 'heal' : 'attack');
+    
     drawMap();
 }
 
@@ -1570,6 +1961,7 @@ function exitAttackMode() {
     hideElement('cancel-action-btn');
     updateCursor('default');
     drawMap();
+    syncMilitaryActionButtons();
 }
 
 // 开始修理模式
@@ -1609,6 +2001,8 @@ function updateCursor(mode) {
         canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><rect x="7" y="7" width="10" height="10" rx="2" ry="2"/><path d="M12 3v18"/><path d="M3 12h18"/></svg>\') 16 16, auto';
     } else if (mode === 'recruit') {
         canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M12 11v8"/><path d="M8 15h8"/></svg>\') 16 16, auto';
+    } else if (mode === 'heal') {
+        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%2327ae60" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>\') 16 16, auto';
     } else if (mode === 'attack') {
         canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>\') 16 16, auto';
     } else if (mode === 'move') {
@@ -1624,6 +2018,10 @@ function updateCursor(mode) {
 function canRecruitMilitaryUnit(unitType) {
     const unitInfo = UNITS[unitType];
     if (!unitInfo) return true;
+    
+    if (unitInfo.recruitFromHospital) {
+        return playerHasDoctorRecruitSlot(gameState.players[gameState.currentPlayerIndex]);
+    }
     
     const requiredBuilding = unitInfo.requiredBuilding;
     if (!requiredBuilding) return true;
@@ -1919,8 +2317,9 @@ function highlightAvailableBuildTiles() {
         return;
     }
     
-    // 判断是否为水域专属建筑
+    // 判断是否为水域专属建筑 / 无主陆地专属建筑
     const isWaterOnly = BUILDINGS[buildingType] && BUILDINGS[buildingType].waterOnly;
+    const isNeutralOnly = BUILDINGS[buildingType] && BUILDINGS[buildingType].neutralOnly;
     
     // 普通建筑高亮
     for (let y = 0; y < GRID_HEIGHT; y++) {
@@ -1931,6 +2330,9 @@ function highlightAvailableBuildTiles() {
             if (isWaterOnly) {
                 // 水域专属建筑（海盗船）：只高亮无主水域
                 if (tile.ownerId !== null || tile.terrain !== 'water' || tile.building || tile.unit) continue;
+            } else if (isNeutralOnly) {
+                // 领地扩张器：无主陆地、空格子
+                if (tile.ownerId !== null || tile.terrain === 'water' || tile.building || tile.unit) continue;
             } else {
                 // 普通建筑：必须在自己领地上
                 if (tile.ownerId !== currentPlayer.id || tile.building || tile.unit) continue;
@@ -1938,10 +2340,19 @@ function highlightAvailableBuildTiles() {
                 if (buildingType === 'mine' && tile.terrain !== 'mountain') continue;
             }
             
-            tile.highlight = {
-                color: isWaterOnly ? 'rgba(52, 152, 219, 0.4)' : 'rgba(46, 204, 113, 0.4)',
-                border: isWaterOnly ? '2px solid #2980b9' : '2px solid #27ae60'
-            };
+            let hlColor;
+            let hlBorder;
+            if (isWaterOnly) {
+                hlColor = 'rgba(52, 152, 219, 0.4)';
+                hlBorder = '2px solid #2980b9';
+            } else if (isNeutralOnly) {
+                hlColor = 'rgba(241, 196, 15, 0.38)';
+                hlBorder = '2px solid #ca8f04';
+            } else {
+                hlColor = 'rgba(46, 204, 113, 0.4)';
+                hlBorder = '2px solid #27ae60';
+            }
+            tile.highlight = { color: hlColor, border: hlBorder };
         }
     }
     
@@ -1950,35 +2361,38 @@ function highlightAvailableBuildTiles() {
 
 // 高亮可招募单位的格子
 function highlightAvailableRecruitTiles() {
-    // 移除之前的高亮效果
     clearTileHighlights();
     
-    // 获取当前玩家
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    const selType = gameState.selectedUnitType;
+    const forDoctor = selType && UNITS[selType] && UNITS[selType].recruitFromHospital;
+    const usedKeys = gameState.factoryProduction.hospitalDoctorRecruitKeys || [];
     
-    // 遍历所有格子
     for (let y = 0; y < GRID_HEIGHT; y++) {
         for (let x = 0; x < GRID_WIDTH; x++) {
             const tileIndex = y * GRID_WIDTH + x;
             const tile = gameState.map[tileIndex];
             
-            // 检查是否是可招募的格子（当前玩家的领土，没有单位）
-            if (tile.ownerId === currentPlayer.id && !tile.unit) {
-                // 检查地形约束
-                if (tile.terrain === 'water') {
-                    continue; // 不能在水域上招募单位
-                }
-                
-                // 高亮可招募的格子
+            if (forDoctor) {
+                if (tile.ownerId !== currentPlayer.id || !tile.building || tile.unit) continue;
+                if (tile.building.type !== 'hospital' && tile.building.type !== 'bigHospital') continue;
+                if (usedKeys.includes(`${x},${y}`)) continue;
                 tile.highlight = {
-                    color: 'rgba(52, 152, 219, 0.4)', // 蓝色半透明
-                    border: '2px solid #2980b9'
+                    color: 'rgba(46, 204, 113, 0.35)',
+                    border: '2px solid #27ae60'
                 };
+            } else {
+                if (tile.ownerId === currentPlayer.id && !tile.unit) {
+                    if (tile.terrain === 'water') continue;
+                    tile.highlight = {
+                        color: 'rgba(52, 152, 219, 0.4)',
+                        border: '2px solid #2980b9'
+                    };
+                }
             }
         }
     }
     
-    // 重绘地图以显示高亮效果
     drawMap();
 }
 
@@ -2273,7 +2687,15 @@ function buildTooltipHTML(tile, x, y) {
         const bName = building.name || (bDef ? bDef.name : '未知建筑');
         lines.push(`<div class="tooltip-title">${bName}</div>`);
         lines.push(`<div class="tooltip-row"><span class="tooltip-label">坐标</span><span>(${x},${y}) ${terrainName}</span></div>`);
-        if (ownerStr) lines.push(`<div class="tooltip-row"><span class="tooltip-label">所有者</span>${ownerStr}</div>`);
+        if (building.type === 'pirateShip') {
+            lines.push(`<div class="tooltip-row"><span class="tooltip-label">领地</span><span class="tooltip-value">无主（不占领水域）</span></div>`);
+            if (building.placedByPlayerId != null) {
+                const b = gameState.players[building.placedByPlayerId];
+                lines.push(`<div class="tooltip-row"><span class="tooltip-label">建造者</span><span style="color:${b.color.main}">${b.name}</span></div>`);
+            }
+        } else if (ownerStr) {
+            lines.push(`<div class="tooltip-row"><span class="tooltip-label">所有者</span>${ownerStr}</div>`);
+        }
 
         if (bDef) {
             const maxHP = bDef.maxHealth;
@@ -2323,20 +2745,26 @@ function buildTooltipHTML(tile, x, y) {
             const hpClass = pct > 70 ? 'tooltip-hp-good' : pct > 30 ? 'tooltip-hp-warn' : 'tooltip-hp-crit';
             lines.push(`<div class="tooltip-row"><span class="tooltip-label">生命</span><span class="${hpClass} tooltip-value">${curHP}/${maxHP}</span></div>`);
 
-            let atkDisplay = uDef.attack;
+            let atkDisplay = getUnitAttackStatDisplay(unit.type);
             if (unit.type === 'instructor') {
                 const calcFn = window.calculateInstructorAttack || calculateInstructorAttackLocal;
                 atkDisplay = calcFn(unit);
             }
-            lines.push(`<div class="tooltip-row"><span class="tooltip-label">攻/防</span><span class="tooltip-value">${atkDisplay} / ${uDef.defense}</span></div>`);
-            lines.push(`<div class="tooltip-row"><span class="tooltip-label">移动/攻击</span><span class="tooltip-value">${uDef.moveRange} / ${uDef.attackRange}</span></div>`);
+            if (uDef.isHealer) {
+                lines.push(`<div class="tooltip-row"><span class="tooltip-label">攻/防</span><span class="tooltip-value">— / ${uDef.defense}</span></div>`);
+                const hR = uDef.healRange != null ? uDef.healRange : uDef.attackRange;
+                lines.push(`<div class="tooltip-row"><span class="tooltip-label">移动/治疗</span><span class="tooltip-value">${uDef.moveRange} / ${hR}</span></div>`);
+            } else {
+                lines.push(`<div class="tooltip-row"><span class="tooltip-label">攻/防</span><span class="tooltip-value">${atkDisplay} / ${uDef.defense}</span></div>`);
+                lines.push(`<div class="tooltip-row"><span class="tooltip-label">移动/攻击</span><span class="tooltip-value">${uDef.moveRange} / ${uDef.attackRange}</span></div>`);
+            }
 
             if (unit.hasActed) {
                 lines.push(`<div style="color:#e74c3c;font-size:11px;margin-top:2px;">已行动</div>`);
             } else if (unit.hasMoved && !unit.hasAttacked) {
-                lines.push(`<div style="color:#f39c12;font-size:11px;margin-top:2px;">已移动 / 可攻击</div>`);
+                lines.push(`<div style="color:#f39c12;font-size:11px;margin-top:2px;">已移动 / ${uDef.isHealer ? '可治疗' : '可攻击'}</div>`);
             } else if (unit.hasAttacked && !unit.hasMoved) {
-                lines.push(`<div style="color:#f39c12;font-size:11px;margin-top:2px;">可移动 / 已攻击</div>`);
+                lines.push(`<div style="color:#f39c12;font-size:11px;margin-top:2px;">可移动 / ${uDef.isHealer ? '已治疗' : '已攻击'}</div>`);
             }
         }
     }

@@ -105,6 +105,17 @@ body {
     gap: 10px;
 }
 
+.global-ui-help {
+    font-size: 12px;
+    line-height: 1.45;
+    color: #2c3e50;
+    background: linear-gradient(135deg, #e8f4fc 0%, #f0f7ff 100%);
+    border: 1px solid #b8d4e8;
+    border-radius: 6px;
+    padding: 8px 10px;
+    min-height: 3.2em;
+}
+
 #bottom-panel {
     width: 100%;
 }
@@ -175,14 +186,14 @@ button {
     cursor: pointer;
     font-size: 14px;
     margin: 5px 0;
-    transition: all 0.2s;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
     width: 100%;
 }
 
+/* 勿用 translateY：上移会让指针相对按钮下移，反复触发 mouseleave/enter 造成点击时「晃」 */
 button:hover:not(:disabled) {
     background-color: #45a049;
-    transform: translateY(-2px);
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
 }
 
 button:disabled {
@@ -402,7 +413,6 @@ button:disabled {
 .enchantment-card:hover:not(.ench-disabled):not(.ench-owned) {
     border-color: #5b6abf;
     box-shadow: 0 2px 8px rgba(91,106,191,0.18);
-    transform: translateY(-1px);
     background: #f5f6ff;
 }
 

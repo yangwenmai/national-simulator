@@ -192,4 +192,13 @@ function calculateMovementCost(fromTile, toTile, unit) {
     };
     
     return terrainCosts[toTile.terrain] || Infinity;
-} 
+}
+
+// 建筑归属玩家（海盗船格子 ownerId 为 null，用 placedByPlayerId）
+function getTileBuildingOwnerId(tile) {
+    if (!tile || !tile.building) return tile ? tile.ownerId : null;
+    if (tile.building.type === 'pirateShip' && tile.building.placedByPlayerId != null) {
+        return tile.building.placedByPlayerId;
+    }
+    return tile.ownerId;
+}

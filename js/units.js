@@ -92,10 +92,11 @@ const UNITS = {
     
     archer: {
         name: '弓箭手',
-        desc: '远距离精准射手，造成目标25%生命值伤害。但每次攻击有50%概率对自身造成50%伤害。',
-        combatNotes: '造成目标25%当前血量伤害。50%概率自身受到50%当前血量伤害。',
+        desc: '远距离精准射手，造成目标最大生命值35%的伤害。每次攻击有50%概率对自身造成当前生命50%的反噬。',
+        combatNotes: '造成目标最大生命值35%伤害。50%概率自身受到当前生命50%反噬。',
         cost: 500,
-        attack: 30,
+        attack: 0,
+        damagePercentOfTargetMaxHp: 35,
         defense: 10,
         health: 100,
         moveRange: 2,
@@ -105,12 +106,33 @@ const UNITS = {
         requiredBuilding: 'barracks',
         special: {
             name: '精准射击',
-            effect: '造成目标25%血量伤害，50%概率对自己造成50%血量伤害'
+            effect: '造成目标最大生命35%伤害，50%概率对自身造成当前生命50%反噬'
         },
         percentageDamage: true
     },
     
     // 特殊单位
+    doctor: {
+        name: '医生',
+        desc: '由医院招募的支援单位。三格内对友方军事单位治疗50点生命，每回合仅可治疗一次。无法攻击。',
+        combatNotes: '无攻击能力。使用「治疗」按钮选择范围内受伤友军。',
+        cost: 80,
+        attack: 0,
+        defense: 8,
+        health: 60,
+        moveRange: 2,
+        attackRange: 3,
+        buildTime: 1,
+        type: 'ground',
+        recruitFromHospital: true,
+        isHealer: true,
+        healAmount: 50,
+        healRange: 3,
+        special: {
+            name: '战场急救',
+            effect: '三格内选择一名友方军事单位恢复50点生命，每回合一次'
+        }
+    },
     commandUnit: {
         name: '指挥单位',
         desc: '提升周围友方单位的战斗力。',
@@ -193,8 +215,8 @@ const UNITS = {
     },
     pirate: {
         name: '海盗',
-        desc: '从海盗船刷新的中立敌对单位，会自动寻找最近首都并沿途攻击所有单位和建筑。击杀可获得100金币。',
-        combatNotes: '中立单位，主动移动并攻击路径上所有目标。击杀奖励100金币。',
+        desc: '从海盗船刷新的中立单位，会自动寻找最近首都并沿途攻击玩家单位与建筑，但不会攻击海盗船。击杀随机获得500~700金币。',
+        combatNotes: '中立单位；不攻击海盗船。击杀奖励500~700金币（随机）。',
         cost: 0,
         attack: 20,
         defense: 8,
@@ -205,12 +227,12 @@ const UNITS = {
         type: 'ground',
         isNeutral: true,
         cannotRecruit: true,
-        killReward: 100
+        killRewardRange: { min: 500, max: 700 }
     },
     bloodBerserker: {
         name: '嗜血狂魔',
-        desc: '杀戮成长型单位。击杀军事单位+10生命+5攻击，摧毁建筑+10攻击+5生命。',
-        combatNotes: '解锁条件：10回合内击杀5个军事单位。每次击杀/摧毁都会成长变强。',
+        desc: '杀戮成长型单位。累计消灭5个敌方军事单位即可招募（单位、防御塔、导弹击杀均计入）。成长加成仅在该嗜血狂魔亲自普攻完成击杀或拆建筑时触发；塔、导弹及其他兵种造成的消灭不计成长。',
+        combatNotes: '解锁：累计5杀（单位/塔/导弹均可）。成长：必须由本嗜血狂魔在地图上发起攻击并完成最后一击，塔与导弹不算。',
         cost: 300,
         attack: 30,
         defense: 10,
@@ -222,9 +244,9 @@ const UNITS = {
         requiredBuilding: 'barracks',
         special: {
             name: '嗜血成长',
-            effect: '击杀军事单位：+10最大生命+5攻击力。摧毁建筑：+10攻击力+5最大生命。'
+            effect: '仅本人攻击：击杀敌方军事单位+10最大生命+5攻；摧毁敌方建筑+5最大生命+10攻。防御塔、导弹、其他单位击杀均不叠加。'
         },
-        unlockCondition: { killUnits: 5, withinTurns: 10 },
+        unlockCondition: { killUnits: 5 },
         growthOnKillUnit: { maxHealth: 10, attack: 5 },
         growthOnDestroyBuilding: { attack: 10, maxHealth: 5 }
     }
@@ -235,4 +257,15 @@ const UNIT_CATEGORIES = [
     { id: 'ground', name: '地面单位' },
     { id: 'air', name: '空中单位' },
     { id: 'special', name: '特殊单位' }
-]; 
+];
+
+/** 招募列表/属性面板/地图悬浮：按生命百分比造成伤害时显示「x%最大生命」而非数值 */
+function getUnitAttackStatDisplay(unitType) {
+    const u = UNITS[unitType];
+    if (!u) return '—';
+    if (u.isHealer) return '—';
+    if (u.damagePercentOfTargetMaxHp != null) return `${u.damagePercentOfTargetMaxHp}%最大生命`;
+    if (unitType === 'instructor') return '动态';
+    return String(u.attack);
+}
+window.getUnitAttackStatDisplay = getUnitAttackStatDisplay;

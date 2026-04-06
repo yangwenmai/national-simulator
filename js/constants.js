@@ -52,7 +52,8 @@ const NOTIFICATION_TYPES = {
     error: { color: '#e74c3c', duration: 3000 },
     success: { color: '#2ecc71', duration: 2000 },
     info: { color: '#3498db', duration: 2500 },
-    warning: { color: '#f39c12', duration: 2500 }
+    warning: { color: '#f39c12', duration: 2500 },
+    help: { color: '#2980b9', duration: 9000 }
 };
 
 // 游戏阶段类型

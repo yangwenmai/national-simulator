@@ -3,7 +3,7 @@ const BUILDINGS = {
     // 基础建筑
     capital: {
         name: '首都',
-        desc: '你的国家首都，提供基础收入。丢失首都将导致游戏失败。',
+        desc: '你的国家首都，提供基础收入。丢失首都将导致游戏失败。若还拥有城市，可将首都迁至该城锚点格以保全国家中心。',
         combatNotes: '所有建筑享有25%的伤害减免。注意：被轰炸机和重型坦克攻击时伤害减免后还会有额外加成。',
         cost: 0,
         income: 50,
@@ -52,6 +52,23 @@ const BUILDINGS = {
         maxHealth: 120,
         buildTime: 3,
         category: 'economy'
+    },
+    territoryExpander: {
+        name: '领地扩张器',
+        desc: '只能建在无任何领主的无主陆地上。建成时以自身为中心，将周围3×3内仍为无主的格子划为你的领地（已有主格不会被抢占）。可随时拆除，拆除后收回当时圈下的空地（外圈若已建站或有单位则该格不收回）。',
+        combatNotes: '所有建筑享有25%的伤害减免。',
+        cost: 500,
+        income: 0,
+        maxHealth: 140,
+        buildTime: 0,
+        category: 'economy',
+        isUnique: false,
+        neutralOnly: true,
+        fixedTerritoryRadius: 1,
+        special: {
+            name: '前沿开拓',
+            effect: '建成时对周围3×3无主地宣示主权；拆除或被摧毁后收回当时圈下的空地（外圈已建站或有单位的格除外）。不受「领土扩张」词条改变范围'
+        }
     },
     
     // 军事建筑
@@ -103,7 +120,7 @@ const BUILDINGS = {
     // 辅助建筑
     hospital: {
         name: '医院',
-        desc: '每回合可以治疗附近一个受伤的单位。',
+        desc: '站在医院格上的己方单位每回合末恢复生命。可招募医生在战场上治疗友军。',
         combatNotes: '所有建筑享有25%的伤害减免。',
         cost: 200,
         income: -20,
@@ -113,7 +130,7 @@ const BUILDINGS = {
     },
     bigHospital: {
         name: '大型医院',
-        desc: '每回合可以治疗附近最多三个受伤的单位。',
+        desc: '站在大型医院格上的己方单位每回合末可多次恢复生命。可招募医生。',
         combatNotes: '所有建筑享有25%的伤害减免。',
         cost: 400,
         income: -35,
@@ -171,7 +188,7 @@ const BUILDINGS = {
     },
     city: {
         name: '城市',
-        desc: '占地2x2的大型建筑，提供随机收入(-30~100)。建成后所有军事单位每回合可同时移动和攻击。',
+        desc: '占地2x2的大型建筑，提供随机收入(-30~100)。建成后所有军事单位每回合可同时移动和攻击。危急时可将首都迁至本城锚点（左上格），本城将升格为新首都。',
         combatNotes: '所有建筑享有25%的伤害减免。',
         cost: 700,
         income: 35, // 基础参考值，实际随机-30~100
@@ -223,8 +240,8 @@ const BUILDINGS = {
     },
     pirateShip: {
         name: '海盗船',
-        desc: '水域专属建筑。每2回合刷新一个中立海盗，海盗会自动向最近首都移动并攻击沿途所有单位和建筑。击杀海盗可获得100金币。',
-        combatNotes: '海盗船只能建在水域上。海盗会主动寻路攻击。',
+        desc: '水域专属建筑。所在格水域不属于任何玩家领地。每2回合在附近陆地刷新中立海盗；海盗与海盗船互不攻击。击杀海盗随机获得500~700金币。',
+        combatNotes: '海盗船只能建在无主水域上；不占领地。海盗不会攻击海盗船。任意玩家的单位或导弹均可摧毁海盗船（含己方）。',
         cost: 200,
         income: -10,
         maxHealth: 150,
@@ -235,7 +252,7 @@ const BUILDINGS = {
         pirateSpawnInterval: 2,
         special: {
             name: '海盗刷新',
-            effect: '每2回合在附近生成一个中立海盗，海盗会自动向最近首都移动并攻击沿途所有目标'
+            effect: '每2回合在附近陆地生成中立海盗；海盗不攻击海盗船；船所在格不视为任何玩家领地'
         }
     },
     magicAcademy: {

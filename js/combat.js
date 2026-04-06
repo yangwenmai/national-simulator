@@ -1,5 +1,17 @@
 // 战斗系统相关功能
 
+// 中立单位击杀金币（支持固定 killReward 或 killRewardRange 随机）
+function rollNeutralKillReward(unitType) {
+    const def = UNITS[unitType];
+    if (!def) return null;
+    if (def.killRewardRange) {
+        const { min, max } = def.killRewardRange;
+        return min + Math.floor(Math.random() * (max - min + 1));
+    }
+    if (def.killReward != null) return def.killReward;
+    return null;
+}
+
 // 移动单位
 function moveUnit(fromX, fromY, toX, toY) {
     const fromTileIndex = fromY * GRID_WIDTH + fromX;
@@ -91,6 +103,86 @@ function moveUnit(fromX, fromY, toX, toY) {
     return true;
 }
 
+// 是否为可被医生治疗的友方军事单位（含医生自身）
+function isHealableFriendlyMilitaryUnit(unit, healerOwnerId) {
+    if (!unit || unit.ownerId !== healerOwnerId) return false;
+    if (unit.ownerId < 0) return false;
+    const def = UNITS[unit.type];
+    if (!def || def.isNeutral) return false;
+    return true;
+}
+
+// 医生治疗友方单位（每回合一次，默认恢复50点）
+function healTarget(healerX, healerY, targetX, targetY) {
+    const healerTileIndex = healerY * GRID_WIDTH + healerX;
+    const targetTileIndex = targetY * GRID_WIDTH + targetX;
+    const healerTile = gameState.map[healerTileIndex];
+    const targetTile = gameState.map[targetTileIndex];
+    
+    if (!healerTile.unit) {
+        showNotification('没有单位可以执行治疗！', 'error');
+        return false;
+    }
+    
+    const healer = healerTile.unit;
+    const healerType = healer.type;
+    const healerDef = UNITS[healerType];
+    
+    if (!healerDef || !healerDef.isHealer) {
+        showNotification('该单位不能治疗！', 'error');
+        return false;
+    }
+    
+    const healRange = healerDef.healRange != null ? healerDef.healRange : healerDef.attackRange;
+    const healAmount = healerDef.healAmount != null ? healerDef.healAmount : 50;
+    const distance = Math.abs(healerX - targetX) + Math.abs(healerY - targetY);
+    
+    if (distance > healRange) {
+        showNotification('超出治疗范围！', 'error');
+        return false;
+    }
+    
+    if (!targetTile.unit) {
+        showNotification('该格没有单位可治疗！', 'error');
+        return false;
+    }
+    
+    const target = targetTile.unit;
+    if (!isHealableFriendlyMilitaryUnit(target, healer.ownerId)) {
+        showNotification('只能治疗己方军事单位！', 'error');
+        return false;
+    }
+    
+    const maxHealth = target.maxHealth || UNITS[target.type].health;
+    if (target.health >= maxHealth) {
+        showNotification('目标生命值已满，无需治疗！', 'error');
+        return false;
+    }
+    
+    const healerOwner = gameState.players[healer.ownerId];
+    if (playerHasCity(healerOwner)) {
+        healer.hasAttacked = true;
+        healer.hasActed = healer.hasMoved ? true : false;
+    } else {
+        healer.hasActed = true;
+    }
+    
+    const before = target.health;
+    healUnit(target, healAmount);
+    gameState.map[targetTileIndex].unit.health = target.health;
+    
+    const healerPlayer = gameState.players[healer.ownerId];
+    const targetName = UNITS[target.type].name;
+    const gained = target.health - before;
+    addLogEntry(`${healerPlayer.name}的医生治疗了${targetName}，恢复了${gained}点生命值（${before}→${target.health}）。`);
+    showNotification(`治疗成功！恢复${gained}点生命`, 'success');
+    
+    return true;
+}
+
+window.healTarget = healTarget;
+window.isHealableFriendlyMilitaryUnit = isHealableFriendlyMilitaryUnit;
+
 // 攻击目标
 function attackTarget(attackerX, attackerY, targetX, targetY) {
     const attackerTileIndex = attackerY * GRID_WIDTH + attackerX;
@@ -108,6 +200,11 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
     
     const attacker = attackerTile.unit;
     const attackerType = attacker.type;
+    
+    if (UNITS[attackerType] && UNITS[attackerType].isHealer) {
+        showNotification('医生不能攻击，请使用治疗！', 'error');
+        return false;
+    }
     const attackRange = UNITS[attackerType].attackRange;
     
     // 计算曼哈顿距离
@@ -130,8 +227,10 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
             return false;
         }
     } else if (targetTile.building) {
-        // 如果目标是建筑，检查地块所有者
-        if (targetTile.ownerId === attackerOwnerId) {
+        const buildingOwnerForAttack = getTileBuildingOwnerId(targetTile);
+        const isPirateShip = targetTile.building.type === 'pirateShip';
+        // 海盗船：建造者与敌方均可攻击摧毁；其它建筑仍不可打己方
+        if (buildingOwnerForAttack === attackerOwnerId && !isPirateShip) {
             showNotification('不能攻击自己的建筑！', 'error');
             return false;
         }
@@ -181,15 +280,16 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
             const defenderName = UNITS[defender.type] ? UNITS[defender.type].name : '未知单位';
             const dmg = isNaN(damage) ? 0 : damage;
             
-            // 记录击杀（用于嗜血狂魔解锁条件）
+            // 记录击杀（嗜血狂魔解锁：单位击杀；防御塔/导弹在 game.js 另行记录）
             recordPlayerKill(attackerOwnerId);
             
-            // 嗜血狂魔击杀成长
+            // 嗜血狂魔击杀成长（仅本格单位普攻最后一击；塔/导弹等不得调用成长）
             applyBerserkerKillGrowth(attacker);
             
-            // 中立海盗击杀奖励
-            if (defender.ownerId === -1 && UNITS[defender.type] && UNITS[defender.type].killReward) {
-                const reward = UNITS[defender.type].killReward;
+            // 中立单位击杀奖励（如海盗：500~700 随机）
+            const neutralKillReward = defender.ownerId === -1 ? rollNeutralKillReward(defender.type) : null;
+            if (neutralKillReward != null) {
+                const reward = neutralKillReward;
                 attackerPlayer.gold += reward;
                 addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}击杀了${defenderName}，获得${reward}金币奖励！`);
                 showNotification(`击杀${defenderName}！获得${reward}金币！`, 'success');
@@ -213,8 +313,7 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
             showNotification(`对${defenderName}造成${dmg}点伤害！`, 'info');
         }
     } else if (targetTile.building) {
-        // 对敌方建筑造成伤害
-        const targetOwnerId = targetTile.ownerId;
+        // 对敌方建筑造成伤害（海盗船用 placedByPlayerId 作为归属）
         let actualBuildingTile = targetTile;
         
         // 城市伤害重定向：如果攻击的是城市非锚点部分，将伤害转移到锚点
@@ -226,7 +325,8 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
         const buildingType = actualBuildingTile.building.type;
         const buildingName = actualBuildingTile.building.name;
         const attackerPlayer = gameState.players[attackerOwnerId];
-        const defenderPlayer = gameState.players[targetOwnerId];
+        const targetOwnerId = getTileBuildingOwnerId(actualBuildingTile);
+        const defenderPlayer = targetOwnerId != null ? gameState.players[targetOwnerId] : null;
         
         damage = calculateBuildingDamage(attacker, actualBuildingTile.building);
         
@@ -235,11 +335,12 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
             damage = 5;
         }
         
-        const currentHealth = actualBuildingTile.building.health;
+        ensureFiniteBuildingHealthBeforeDamage(actualBuildingTile.building);
         const maxHealth = buildingType === 'capital' ? 
             BUILDINGS.capital.maxHealth : 
             BUILDINGS[buildingType].maxHealth;
         
+        const currentHealth = actualBuildingTile.building.health;
         const newHealth = Math.max(0, currentHealth - damage);
         actualBuildingTile.building.health = newHealth;
         
@@ -261,7 +362,7 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
         }
         
         if (newHealth <= 0) {
-            if (buildingType === 'capital') {
+            if (buildingType === 'capital' && targetOwnerId != null) {
                 destroyAllPlayerAssets(targetOwnerId);
                 checkGameOver();
             }
@@ -281,18 +382,34 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
                     }
                 }
             } else {
+                const destroyedB = actualBuildingTile.building;
+                const dTx = actualBuildingTile.x;
+                const dTy = actualBuildingTile.y;
+                const dOwner = targetOwnerId;
                 actualBuildingTile.building = null;
+                if (buildingType === 'territoryExpander' && dOwner != null && dOwner >= 0) {
+                    revertTerritoryExpanderClaims(dTx, dTy, destroyedB.expanderClaimedCells, dOwner);
+                }
             }
             
-            // 嗜血狂魔摧毁建筑成长
+            // 嗜血狂魔拆建筑成长（仅本格单位攻击摧毁；塔/导弹等不得调用成长）
             applyBerserkerDestroyGrowth(attacker);
             
-            addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}摧毁了${defenderPlayer.name}的${buildingName}，造成了${isNaN(damage) ? 0 : damage}点伤害。`);
+            const defName = defenderPlayer ? defenderPlayer.name : '中立';
+            addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}摧毁了${defName}的${buildingName}，造成了${isNaN(damage) ? 0 : damage}点伤害。`);
             showNotification(`敌方${buildingName}被摧毁！`, 'success');
+            if (
+                (buildingType === 'pirateShip' || buildingType === 'territoryExpander') &&
+                targetOwnerId != null
+            ) {
+                syncPlayerBuildings(targetOwnerId);
+                updatePlayerIncome(gameState.players[targetOwnerId]);
+            }
         } else {
-            addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}攻击了${defenderPlayer.name}的${buildingName}，造成了${isNaN(damage) ? 0 : damage}点伤害（剩余生命：${newHealth}/${maxHealth}）。`);
+            const defName = defenderPlayer ? defenderPlayer.name : '中立';
+            addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}攻击了${defName}的${buildingName}，造成了${isNaN(damage) ? 0 : damage}点伤害（剩余生命：${newHealth}/${maxHealth}）。`);
             showNotification(`对敌方${buildingName}造成${isNaN(damage) ? 0 : damage}点伤害！`, 'info');
-            updateBuildingDamageEffect(actualBuildingTile, defenderPlayer);
+            if (defenderPlayer) updateBuildingDamageEffect(actualBuildingTile, defenderPlayer);
         }
     } else {
         showNotification('没有目标可以攻击！', 'error');
@@ -362,10 +479,17 @@ function calculateDamage(attacker, defender) {
         adjustedDefense = Math.floor(adjustedDefense * 1.2);
     }
     
-    // 弓箭手：造成目标25%当前血量伤害（忽略攻防计算）
+    // 弓箭手：造成目标最大生命值一定比例伤害（忽略攻防计算）
     if (attackerType === 'archer' && UNITS[attackerType].percentageDamage) {
-        const currentDefenderHP = isNaN(defender.health) ? UNITS[defender.type].health : defender.health;
-        let percentDamage = Math.floor(currentDefenderHP * 0.25);
+        const pct = UNITS[attackerType].damagePercentOfTargetMaxHp ?? 35;
+        const defDef = UNITS[defender.type];
+        const maxDefenderHP =
+            defender.maxHealth != null && !isNaN(defender.maxHealth)
+                ? defender.maxHealth
+                : defDef
+                  ? defDef.health
+                  : 1;
+        let percentDamage = Math.floor(maxDefenderHP * (pct / 100));
         
         // 词条：致命一击 20%概率双倍
         if (attackerPlayer.enchantments && attackerPlayer.enchantments.includes('criticalHit') && Math.random() < 0.2) {
@@ -512,10 +636,19 @@ function calculateBuildingDamage(attacker, building) {
         }
     }
     
-    // 弓箭手对建筑：同样造成25%当前血量伤害
+    // 弓箭手对建筑：按该建筑最大生命值百分比伤害
     if (attackerType === 'archer' && UNITS[attackerType].percentageDamage) {
-        const currentBuildingHP = building.health || 0;
-        let percentDamage = Math.floor(currentBuildingHP * 0.25);
+        const pct = UNITS[attackerType].damagePercentOfTargetMaxHp ?? 35;
+        const bType = building.type;
+        let buildingMaxHealth;
+        if (bType === 'capital') {
+            buildingMaxHealth = BUILDINGS.capital.maxHealth;
+        } else if (bType && BUILDINGS[bType]) {
+            buildingMaxHealth = BUILDINGS[bType].maxHealth;
+        } else {
+            buildingMaxHealth = Math.max(1, building.health || 1);
+        }
+        let percentDamage = Math.floor(buildingMaxHealth * (pct / 100));
         
         const atkPlayer = gameState.players[attacker.ownerId];
         
@@ -563,8 +696,9 @@ function calculateBuildingDamage(attacker, building) {
     
     // 词条：魔法屏障 - 建筑额外+15%伤害减免（需要找到建筑所属玩家）
     const buildingOwnerTile = gameState.map.find(t => t.building === building);
-    if (buildingOwnerTile && buildingOwnerTile.ownerId !== null) {
-        const defPlayer = gameState.players[buildingOwnerTile.ownerId];
+    const barrierOwner = buildingOwnerTile ? getTileBuildingOwnerId(buildingOwnerTile) : null;
+    if (buildingOwnerTile && barrierOwner !== null) {
+        const defPlayer = gameState.players[barrierOwner];
         if (defPlayer && defPlayer.enchantments && defPlayer.enchantments.includes('magicBarrier')) {
             damage *= 0.85;
         }
@@ -579,7 +713,7 @@ function calculateBuildingDamage(attacker, building) {
 
 // 更新建筑损伤状态对收益的影响
 function updateBuildingDamageEffect(tile, player) {
-    if (!tile.building || tile.ownerId !== player.id) return;
+    if (!tile.building || getTileBuildingOwnerId(tile) !== player.id) return;
     
     const building = tile.building;
     const buildingType = building.type;
@@ -727,8 +861,22 @@ function recruitUnit(x, y, unitType) {
         return false;
     }
     
-    // 检查招募限制
-    if (unitInfo.requiredBuildings) {
+    // 医生：仅可在己方医院格招募，每座医院每回合限一名
+    if (unitInfo.recruitFromHospital) {
+        const bt = tile.building && tile.building.type;
+        if (bt !== 'hospital' && bt !== 'bigHospital') {
+            showNotification('医生只能在医院或大型医院的格子上招募！', 'error');
+            return false;
+        }
+        if (!gameState.factoryProduction.hospitalDoctorRecruitKeys) {
+            gameState.factoryProduction.hospitalDoctorRecruitKeys = [];
+        }
+        const hKey = `${x},${y}`;
+        if (gameState.factoryProduction.hospitalDoctorRecruitKeys.includes(hKey)) {
+            showNotification('该医院本回合已招募过医生！', 'error');
+            return false;
+        }
+    } else if (unitInfo.requiredBuildings) {
         // 处理需要多个建筑的情况 (如教官单位或油车)
         let requiredBuildings = [...unitInfo.requiredBuildings];
         
@@ -833,7 +981,7 @@ function recruitUnit(x, y, unitType) {
     // 嗜血狂魔解锁条件检查
     if (unitInfo.unlockCondition) {
         if (!isBloodBerserkerUnlocked(currentPlayer)) {
-            showNotification('未解锁！需要在10回合内击杀5个军事单位。', 'error');
+            showNotification('未解锁！需累计消灭5个敌方军事单位（单位、防御塔或导弹击杀均可）。', 'error');
             return false;
         }
     }
@@ -876,6 +1024,14 @@ function recruitUnit(x, y, unitType) {
     // 添加到玩家单位列表
     currentPlayer.units.push(tile.unit);
     
+    if (unitInfo.recruitFromHospital) {
+        const hKey = `${x},${y}`;
+        if (!gameState.factoryProduction.hospitalDoctorRecruitKeys) {
+            gameState.factoryProduction.hospitalDoctorRecruitKeys = [];
+        }
+        gameState.factoryProduction.hospitalDoctorRecruitKeys.push(hKey);
+    }
+    
     // 添加游戏日志
     addLogEntry(`${currentPlayer.name}在坐标(${x}, ${y})招募了${unitInfo.name}，花费${unitCost}金币。`);
     
@@ -906,7 +1062,7 @@ function repairBuilding(x, y) {
     const tile = gameState.map[tileIndex];
     const player = gameState.players[gameState.currentPlayerIndex];
     
-    if (tile.ownerId !== player.id || !tile.building) {
+    if (getTileBuildingOwnerId(tile) !== player.id || !tile.building) {
         showNotification('只能修理自己的建筑！', 'error');
         return false;
     }
@@ -918,6 +1074,7 @@ function repairBuilding(x, y) {
     
     const targetBuilding = tile.building;
     const buildingType = targetBuilding.type;
+    ensureFiniteBuildingHealthBeforeDamage(targetBuilding);
     const maxHealth = buildingType === 'capital' ? BUILDINGS.capital.maxHealth : BUILDINGS[buildingType].maxHealth;
     
     if (targetBuilding.health >= maxHealth) {
@@ -1127,12 +1284,10 @@ function findNearbyEnemyBuilding(attacker, defender) {
     return null;
 }
 
-// 检查嗜血狂魔是否已解锁（10回合内击杀5个军事单位）
+// 检查嗜血狂魔是否已解锁（累计消灭5个敌方军事单位，含单位普攻、防御塔、导弹）
 function isBloodBerserkerUnlocked(player) {
     if (!player.killHistory || player.killHistory.length === 0) return false;
-    const currentTurn = gameState.turn;
-    const recentKills = player.killHistory.filter(t => currentTurn - t < 10);
-    return recentKills.length >= 5;
+    return player.killHistory.length >= 5;
 }
 
 // 记录玩家击杀
@@ -1142,9 +1297,17 @@ function recordPlayerKill(playerId) {
     player.killHistory.push(gameState.turn);
 }
 
-// 嗜血狂魔成长：击杀军事单位
+function isBerserkerEligibleForGrowth(attacker) {
+    if (!attacker || attacker.type !== 'bloodBerserker') return false;
+    if (attacker.x == null || attacker.y == null) return false;
+    if (attacker.x < 0 || attacker.x >= GRID_WIDTH || attacker.y < 0 || attacker.y >= GRID_HEIGHT) return false;
+    const tile = gameState.map[attacker.y * GRID_WIDTH + attacker.x];
+    return !!(tile && tile.unit === attacker);
+}
+
+/** 嗜血狂魔击杀成长：仅当该嗜血狂魔本格发起攻击并造成敌方单位阵亡时生效（须为 map 上当前该格单位引用）。 */
 function applyBerserkerKillGrowth(attacker) {
-    if (attacker.type !== 'bloodBerserker') return;
+    if (!isBerserkerEligibleForGrowth(attacker)) return;
     const growth = UNITS.bloodBerserker.growthOnKillUnit;
     attacker.attack += growth.attack;
     attacker.bonusAttack = (attacker.bonusAttack || 0) + growth.attack;
@@ -1159,9 +1322,9 @@ function applyBerserkerKillGrowth(attacker) {
     showNotification(`嗜血狂魔成长！攻击+${growth.attack} 生命+${growth.maxHealth}`, 'success');
 }
 
-// 嗜血狂魔成长：摧毁建筑
+/** 嗜血狂魔拆建筑成长：仅当该嗜血狂魔本格攻击并摧毁建筑时生效。防御塔、导弹等击杀/拆毁不触发。 */
 function applyBerserkerDestroyGrowth(attacker) {
-    if (attacker.type !== 'bloodBerserker') return;
+    if (!isBerserkerEligibleForGrowth(attacker)) return;
     const growth = UNITS.bloodBerserker.growthOnDestroyBuilding;
     attacker.attack += growth.attack;
     attacker.bonusAttack = (attacker.bonusAttack || 0) + growth.attack;

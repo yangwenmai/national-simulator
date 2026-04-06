@@ -228,31 +228,48 @@ function drawMap() {
             }
         }
         
-        // 绘制攻击范围
+        // 绘制攻击范围（医生为治疗范围）
         if (gameState.attackMode && gameState.selectedUnit) {
-            const currentPlayer = gameState.players[gameState.currentPlayerIndex];
             const unitType = gameState.selectedUnit.type;
-            const attackRange = UNITS[unitType].attackRange;
+            const unitDef = UNITS[unitType];
+            const range = unitDef.isHealer
+                ? (unitDef.healRange != null ? unitDef.healRange : unitDef.attackRange)
+                : unitDef.attackRange;
             const srcX = gameState.selectedUnit.x;
             const srcY = gameState.selectedUnit.y;
             
-            // 计算曼哈顿距离
             const distance = Math.abs(tile.x - srcX) + Math.abs(tile.y - srcY);
             
-            // 在攻击范围内高亮显示
-            if (distance <= attackRange && distance > 0) {
-                ctx.fillStyle = 'rgba(231, 76, 60, 0.3)';
-                ctx.fillRect(x, y, cellWidth, cellHeight);
-                
-                // 敌方单位或建筑高亮显示
+            if (distance <= range && distance > 0) {
                 const srcTileIndex = srcY * GRID_WIDTH + srcX;
                 const srcTile = gameState.map[srcTileIndex];
                 const attackerOwnerId = srcTile.unit.ownerId !== undefined ? srcTile.unit.ownerId : srcTile.ownerId;
                 
-                if ((tile.unit && tile.unit.ownerId !== attackerOwnerId) || 
-                    (!tile.unit && tile.building && tile.ownerId !== attackerOwnerId)) {
-                    ctx.fillStyle = 'rgba(231, 76, 60, 0.6)';
+                if (unitDef.isHealer) {
+                    ctx.fillStyle = 'rgba(46, 204, 113, 0.22)';
                     ctx.fillRect(x, y, cellWidth, cellHeight);
+                    
+                    if (tile.unit && window.isHealableFriendlyMilitaryUnit &&
+                        window.isHealableFriendlyMilitaryUnit(tile.unit, attackerOwnerId)) {
+                        const maxH = tile.unit.maxHealth || UNITS[tile.unit.type].health;
+                        if (tile.unit.health < maxH) {
+                            ctx.fillStyle = 'rgba(39, 174, 96, 0.5)';
+                            ctx.fillRect(x, y, cellWidth, cellHeight);
+                        }
+                    }
+                } else {
+                    ctx.fillStyle = 'rgba(231, 76, 60, 0.3)';
+                    ctx.fillRect(x, y, cellWidth, cellHeight);
+                    
+                    const enemyUnit = tile.unit && tile.unit.ownerId !== attackerOwnerId;
+                    const bOwner = tile.building ? getTileBuildingOwnerId(tile) : null;
+                    const enemyOrPirateShip = tile.building && (
+                        tile.building.type === 'pirateShip' || bOwner !== attackerOwnerId
+                    );
+                    if (enemyUnit || (!tile.unit && enemyOrPirateShip)) {
+                        ctx.fillStyle = 'rgba(231, 76, 60, 0.6)';
+                        ctx.fillRect(x, y, cellWidth, cellHeight);
+                    }
                 }
             }
         }
@@ -429,6 +446,19 @@ function drawBuildingInProgress(buildingType, x, y, cellWidth, cellHeight, owner
                 ctx.stroke();
                 break;
             
+            case 'territoryExpander':
+                ctx.fillRect(x + margin, y + margin, buildingWidth, buildingHeight);
+                ctx.strokeStyle = '#555';
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(x + margin + 2, y + margin + 2, buildingWidth - 4, buildingHeight - 4);
+                ctx.beginPath();
+                ctx.moveTo(x + margin + buildingWidth * 0.5, y + margin + 4);
+                ctx.lineTo(x + margin + buildingWidth * 0.5, y + margin + buildingHeight - 4);
+                ctx.moveTo(x + margin + 4, y + margin + buildingHeight * 0.5);
+                ctx.lineTo(x + margin + buildingWidth - 4, y + margin + buildingHeight * 0.5);
+                ctx.stroke();
+                break;
+
             case 'pirateShip':
                 // 海盗船（船体 + 桅杆 + 骷髅旗）
                 ctx.fillStyle = '#5D4037';
@@ -568,10 +598,10 @@ function getTileByCoordinates(x, y) {
 // 绘制建筑
 function drawBuilding(tile, x, y, cellWidth, cellHeight) {
     const building = tile.building;
+    const displayOwnerId = getTileBuildingOwnerId(tile);
     
-    // 设置颜色
-    if (tile.ownerId !== null) {
-        ctx.fillStyle = gameState.players[tile.ownerId].color.main;
+    if (displayOwnerId !== null && displayOwnerId >= 0) {
+        ctx.fillStyle = gameState.players[displayOwnerId].color.main;
     } else {
         ctx.fillStyle = '#aaa';
     }
@@ -733,7 +763,7 @@ function drawBuilding(tile, x, y, cellWidth, cellHeight) {
             case 'missileFactory':
                 // 导弹工厂
                 ctx.fillRect(x + margin, y + margin, buildingWidth, buildingHeight);
-                ctx.fillStyle = tile.ownerId !== null ? gameState.players[tile.ownerId].color.dark : '#666';
+                ctx.fillStyle = displayOwnerId !== null && displayOwnerId >= 0 ? gameState.players[displayOwnerId].color.dark : '#666';
                 ctx.fillRect(x + margin + buildingWidth * 0.15, y + margin - buildingHeight * 0.2, buildingWidth * 0.15, buildingHeight * 0.2);
                 ctx.fillRect(x + margin + buildingWidth * 0.65, y + margin - buildingHeight * 0.15, buildingWidth * 0.15, buildingHeight * 0.15);
                 ctx.fillStyle = '#e74c3c';
@@ -762,6 +792,33 @@ function drawBuilding(tile, x, y, cellWidth, cellHeight) {
                 ctx.fillText('🔧', x + margin + buildingWidth / 2, y + margin + buildingHeight * 0.55);
                 break;
             
+            case 'territoryExpander': {
+                ctx.save();
+                ctx.fillRect(x + margin, y + margin, buildingWidth, buildingHeight);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                const cx = x + margin + buildingWidth / 2;
+                const cy = y + margin + buildingHeight / 2;
+                const r = buildingWidth * 0.28;
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                ctx.stroke();
+                for (let i = 0; i < 4; i++) {
+                    const ang = (i * Math.PI) / 2 - Math.PI / 4;
+                    ctx.beginPath();
+                    ctx.moveTo(cx + Math.cos(ang) * r * 0.5, cy + Math.sin(ang) * r * 0.5);
+                    ctx.lineTo(cx + Math.cos(ang) * r * 1.15, cy + Math.sin(ang) * r * 1.15);
+                    ctx.stroke();
+                }
+                ctx.fillStyle = '#fff';
+                ctx.font = `${Math.max(7, buildingWidth * 0.22)}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('⊕', cx, cy);
+                ctx.restore();
+                break;
+            }
+
             case 'pirateShip': {
                 const shipBoatY = y + margin + buildingHeight * 0.4;
                 const shipBoatH = buildingHeight * 0.5;
@@ -800,7 +857,7 @@ function drawBuilding(tile, x, y, cellWidth, cellHeight) {
     drawHealthBar(x, y, cellWidth, cellHeight, building);
     
     // 绘制建筑名称标签
-    drawBuildingLabel(type, x, y, cellWidth, cellHeight, tile.ownerId);
+    drawBuildingLabel(type, x, y, cellWidth, cellHeight, displayOwnerId);
 }
 
 // 绘制单位
@@ -925,6 +982,23 @@ function drawUnit(tile, x, y, cellWidth, cellHeight) {
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText('📚', x + cellWidth / 2, y + cellHeight / 2);
+            break;
+        
+        case 'doctor':
+            ctx.beginPath();
+            ctx.arc(x + cellWidth / 2, y + cellHeight / 2, unitSize / 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            const cx = x + cellWidth / 2;
+            const cy = y + cellHeight / 2;
+            const arm = unitSize * 0.22;
+            ctx.beginPath();
+            ctx.moveTo(cx - arm, cy);
+            ctx.lineTo(cx + arm, cy);
+            ctx.moveTo(cx, cy - arm);
+            ctx.lineTo(cx, cy + arm);
+            ctx.stroke();
             break;
         
         case 'pirate':
