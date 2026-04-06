@@ -1,17 +1,28 @@
 // 渲染相关功能
 let canvas, ctx;
 let mapViewMode = 'fit'; // 'fit' = 适应窗口, 'scroll' = 原始大小可拖拽
+let _currentCellPx = 0;  // 当前每格像素尺寸，由 resizeCanvas 维护
 
 // 初始化画布
 function initCanvas() {
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
     
+    const scrollContainer = document.getElementById('canvas-scroll-container');
+    
+    // 初始化时就同步容器 CSS 状态，避免默认 overflow:auto 产生意外滚动条
+    if (scrollContainer) {
+        if (mapViewMode === 'fit') {
+            scrollContainer.classList.add('fit-mode');
+        } else {
+            scrollContainer.classList.remove('fit-mode');
+        }
+    }
+    
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     
     // 拖拽滚动
-    const scrollContainer = document.getElementById('canvas-scroll-container');
     if (scrollContainer) {
         let isDragging = false, startX, startY, scrollLeft, scrollTop;
         
@@ -43,16 +54,11 @@ function setMapViewMode(mode) {
     
     const fitBtn = document.getElementById('view-fit-btn');
     const scrollBtn = document.getElementById('view-scroll-btn');
-    const container = document.getElementById('canvas-scroll-container');
     
     if (fitBtn) fitBtn.className = mode === 'fit' ? 'active-view-btn' : '';
     if (scrollBtn) scrollBtn.className = mode === 'scroll' ? 'active-view-btn' : '';
-    if (container) {
-        container.className = mode === 'fit' ? 'fit-mode' : '';
-        container.scrollLeft = 0;
-        container.scrollTop = 0;
-    }
     
+    // 容器 class 和滚动位置由 resizeCanvas 统一管理，避免状态不同步
     resizeCanvas();
 }
 
@@ -61,12 +67,17 @@ function resizeCanvas() {
     const scrollContainer = document.getElementById('canvas-scroll-container');
     if (!scrollContainer) return;
     
-    // fit 模式下重置滚动位置，防止残留偏移影响坐标计算
+    // ── 1. 同步容器 CSS 状态 ──
+    // 始终在计算尺寸前同步，确保 clientWidth 读到的是正确布局
     if (mapViewMode === 'fit') {
+        scrollContainer.classList.add('fit-mode');
         scrollContainer.scrollLeft = 0;
         scrollContainer.scrollTop = 0;
+    } else {
+        scrollContainer.classList.remove('fit-mode');
     }
     
+    // ── 2. 强制浏览器完成布局后再读取容器宽度 ──
     const containerWidth = scrollContainer.clientWidth;
     let cellPx;
     
@@ -81,6 +92,7 @@ function resizeCanvas() {
         cellPx = Math.max(MIN_CELL_PX, Math.floor(containerWidth / GRID_WIDTH));
     }
     
+    // ── 3. 设置画布尺寸：bitmap 和 CSS 显示尺寸保持一致 ──
     const w = cellPx * GRID_WIDTH;
     const h = cellPx * GRID_HEIGHT;
     
@@ -88,6 +100,9 @@ function resizeCanvas() {
     canvas.height = h;
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
+    
+    // ── 4. 存储当前格子像素尺寸（供外部查询） ──
+    _currentCellPx = cellPx;
     
     const info = document.getElementById('map-size-info');
     if (info) {
