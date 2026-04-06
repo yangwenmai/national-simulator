@@ -193,24 +193,24 @@ const UNITS = {
     magicSoldier: {
         name: '魔法兵',
         desc: '强力魔法单位，拥有魔法刀和特殊能力。',
-        combatNotes: '对建筑造成的伤害会减少25%。血量低于50%时，每回合扣除10%血量并增加100%攻击力。血量低于10%时有一次复活机会。',
+        combatNotes: '对建筑造成的伤害会减少25%。血量低于50%时，每回合扣除10%血量并增加100%攻击力。血量低于10%时有一次复活机会。亲自普攻摧毁敌方建筑时，获得该建筑造价一半的金币。',
         cost: 600,
-        attack: 40,
-        defense: 15,
+        attack: 70,
+        defense: 35,
         health: 110,
-        moveRange: 2,
-        attackRange: 1,
+        moveRange: 7,
+        attackRange: 5,
         buildTime: 3,
         type: 'special',
-        requiredBuildings: ['researchCenter', 'library', 'magicAcademy'], // 需要同时拥有研究中心、图书馆和魔法学院
+        requiredBuildings: ['magicAcademy'], // 仅需魔法学院
         special: {
             name: '魔法刀',
-            effect: '有50%概率触发魔法刀，将攻击力翻倍并获得额外buff'
+            effect: '有50%概率触发魔法刀，将攻击力翻倍；所选反伤或破甲 buff 永久生效'
         },
         hasMagicAbility: true, // 标记拥有魔法能力
         magicBuffs: [
-            { id: 'reflection', name: '反伤', desc: '当受到攻击时，反弹50%伤害给攻击者' },
-            { id: 'armorBreak', name: '破甲', desc: '使目标建筑永久失去防御' }
+            { id: 'reflection', name: '反伤', desc: '受击时反弹50%伤害给攻击者（永久，可反复触发）' },
+            { id: 'armorBreak', name: '破甲', desc: '使目标建筑永久失去25%减伤（对该建筑持续有效）' }
         ]
     },
     pirate: {

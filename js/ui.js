@@ -666,6 +666,7 @@ function updateSelectionInfo() {
                         gameState.missileMode = true;
                         gameState.selectedMissileFactory = mapTile;
                         showElement('cancel-action-btn');
+                        updateCursor('missile');
                         showNotification('点击地图上的任意位置发射导弹！', 'info');
                         highlightMissileRange();
                     });
@@ -1325,7 +1326,7 @@ function updateMilitaryOptions() {
                 // 多建筑要求
                 let requiredBuildings = [...unit.requiredBuildings];
                 
-                // 词条：特殊征召 - 魔法兵无需魔法学院
+                // 词条：特殊征召 - 魔法兵无需魔法学院（无其它建筑要求）
                 if (unitType === 'magicSoldier' && 
                     currentPlayer.enchantments && 
                     currentPlayer.enchantments.includes('specialRecruit')) {
@@ -1994,21 +1995,44 @@ function exitRecruitMode() {
     clearTileHighlights();
 }
 
-// 更新鼠标光标样式
+// 更新鼠标光标样式（20×20 小图标 + 中心热点，避免挡住格子）
 function updateCursor(mode) {
-    // 所有自定义光标均使用 16 16 热点（图标中心），确保点击位置精准匹配视觉中心
+    const hot = '10 10';
     if (mode === 'build') {
-        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><rect x="7" y="7" width="10" height="10" rx="2" ry="2"/><path d="M12 3v18"/><path d="M3 12h18"/></svg>\') 16 16, auto';
+        canvas.style.cursor =
+            'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="%23333" stroke-width="1.25" stroke-linecap="round"><circle cx="10" cy="10" r="2.2"/><line x1="10" y1="1.5" x2="10" y2="6"/><line x1="10" y1="14" x2="10" y2="18.5"/><line x1="1.5" y1="10" x2="6" y2="10"/><line x1="14" y1="10" x2="18.5" y2="10"/></svg>\') ' +
+            hot +
+            ', auto';
+    } else if (mode === 'missile') {
+        canvas.style.cursor =
+            'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="%23c0392b" stroke-width="1.25" stroke-linecap="round"><circle cx="10" cy="10" r="2"/><line x1="10" y1="1.5" x2="10" y2="5.5"/><line x1="10" y1="14.5" x2="10" y2="18.5"/><line x1="1.5" y1="10" x2="5.5" y2="10"/><line x1="14.5" y1="10" x2="18.5" y2="10"/></svg>\') ' +
+            hot +
+            ', auto';
     } else if (mode === 'recruit') {
-        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M12 11v8"/><path d="M8 15h8"/></svg>\') 16 16, auto';
+        canvas.style.cursor =
+            'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="%23333" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="3.5"/><path d="M12 10.5v7"/><path d="M8.5 14.5h7"/></svg>\') ' +
+            hot +
+            ', auto';
     } else if (mode === 'heal') {
-        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%2327ae60" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>\') 16 16, auto';
+        canvas.style.cursor =
+            'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="%2327ae60" stroke-width="1.5" stroke-linecap="round"><path d="M12 6v12"/><path d="M6 12h12"/></svg>\') ' +
+            hot +
+            ', auto';
     } else if (mode === 'attack') {
-        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>\') 16 16, auto';
+        canvas.style.cursor =
+            'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="%23e74c3c" stroke-width="1.5" stroke-linecap="round"><path d="M17 7L7 17"/><path d="M7 7l10 10"/></svg>\') ' +
+            hot +
+            ', auto';
     } else if (mode === 'move') {
-        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%233498db" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7-7 7 7"/><path d="M12 2v20"/></svg>\') 16 16, auto';
+        canvas.style.cursor =
+            'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="%233498db" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 10l7-6 7 6"/><path d="M12 4v16"/></svg>\') ' +
+            hot +
+            ', auto';
     } else if (mode === 'repair') {
-        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%232ecc71" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>\') 16 16, auto';
+        canvas.style.cursor =
+            'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="%232ecc71" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>\') ' +
+            hot +
+            ', auto';
     } else if (mode === 'default') {
         canvas.style.cursor = 'default';
     }

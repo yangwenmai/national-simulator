@@ -242,3 +242,23 @@ function ensureFiniteBuildingHealthBeforeDamage(building) {
         building.health = Math.min(maxH, Math.max(0, h));
     }
 }
+
+/**
+ * 摧毁敌方首都后，由玩家单位/导弹等造成的最后一击方获得战利品：
+ * 增加与其当时持有金币等额的金币（即当前金币的 +100%）。
+ */
+function grantCapitalDestructionGoldBonus(beneficiaryPlayerId) {
+    if (beneficiaryPlayerId == null || beneficiaryPlayerId < 0) return;
+    const p = gameState.players[beneficiaryPlayerId];
+    if (!p || p.isDefeated) return;
+    const bonus = Math.max(0, Math.floor(Number(p.gold)) || 0);
+    if (bonus <= 0) {
+        addLogEntry(`${p.name}摧毁敌方首都，因当前金币为 0，未获得额外金币战利品。`);
+        return;
+    }
+    p.gold += bonus;
+    addLogEntry(
+        `${p.name}摧毁敌方首都！战利品为当时持有金币的 100%（+${bonus}），现持有 ${p.gold} 金币。`
+    );
+    showNotification(`摧毁首都！获得 ${bonus} 金币（与当时持有量等额）`, 'success');
+}

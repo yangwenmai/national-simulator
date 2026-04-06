@@ -96,7 +96,7 @@ const ENCHANTMENTS = {
     specialRecruit: {
         id: 'specialRecruit',
         name: '特殊征召',
-        desc: '无需魔法学院前置即可招募魔法兵（仍需研究中心和图书馆）',
+        desc: '无需魔法学院即可招募魔法兵（无任何建筑前置）',
         cost: 800,
         icon: '✨'
     },

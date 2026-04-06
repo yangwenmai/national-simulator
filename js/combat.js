@@ -364,6 +364,7 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
         if (newHealth <= 0) {
             if (buildingType === 'capital' && targetOwnerId != null) {
                 destroyAllPlayerAssets(targetOwnerId);
+                grantCapitalDestructionGoldBonus(attackerOwnerId);
                 checkGameOver();
             }
             
@@ -394,6 +395,7 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
             
             // 嗜血狂魔拆建筑成长（仅本格单位攻击摧毁；塔/导弹等不得调用成长）
             applyBerserkerDestroyGrowth(attacker);
+            applyMagicSoldierDestroyBuildingGold(attacker, buildingType);
             
             const defName = defenderPlayer ? defenderPlayer.name : '中立';
             addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}摧毁了${defName}的${buildingName}，造成了${isNaN(damage) ? 0 : damage}点伤害。`);
@@ -461,9 +463,7 @@ function calculateDamage(attacker, defender) {
         const attackerPlayer = gameState.players[attacker.ownerId];
         addLogEntry(`${defenderPlayer.name}的魔法兵反弹了${reflectedDamage}点伤害给${attackerPlayer.name}的${UNITS[attacker.type].name}！`);
         showNotification(`反伤效果触发！反弹了${reflectedDamage}点伤害`, 'info');
-        
-        // 使用后移除反伤buff
-        defender.reflectionBuff = false;
+        // 反伤为魔法刀所选 buff，永久保留，每次受击均可触发
     }
     
     // 词条：攻击强化 +20%
@@ -880,7 +880,7 @@ function recruitUnit(x, y, unitType) {
         // 处理需要多个建筑的情况 (如教官单位或油车)
         let requiredBuildings = [...unitInfo.requiredBuildings];
         
-        // 词条：特殊征召 - 魔法兵无需魔法学院前置
+        // 词条：特殊征召 - 魔法兵取消「需魔法学院」的唯一前置
         if (unitType === 'magicSoldier' && 
             currentPlayer.enchantments && 
             currentPlayer.enchantments.includes('specialRecruit')) {
@@ -1196,7 +1196,7 @@ function applyMagicBuff(attacker, defender) {
     buffContainer.appendChild(title);
     
     const description = document.createElement('p');
-    description.textContent = '魔法刀触发，选择一个buff效果：';
+    description.textContent = '魔法刀触发，选择一个永久 buff（本局持续有效）：';
     description.style.marginBottom = '20px';
     buffContainer.appendChild(description);
     
@@ -1337,4 +1337,24 @@ function applyBerserkerDestroyGrowth(attacker) {
     const attackerPlayer = gameState.players[attacker.ownerId];
     addLogEntry(`${attackerPlayer.name}的嗜血狂魔摧毁建筑成长！攻击+${growth.attack}，最大生命+${growth.maxHealth}（当前：${attacker.attack}攻/${attacker.maxHealth}血）`);
     showNotification(`嗜血狂魔成长！攻击+${growth.attack} 生命+${growth.maxHealth}`, 'success');
+}
+
+/** 魔法兵普攻摧毁建筑：获得 BUILDINGS 造价的一半（首都造价为 0 则无）；须为地图上本格发起攻击的单位。 */
+function applyMagicSoldierDestroyBuildingGold(attacker, buildingType) {
+    if (!attacker || attacker.type !== 'magicSoldier') return;
+    if (attacker.x == null || attacker.y == null) return;
+    if (attacker.x < 0 || attacker.x >= GRID_WIDTH || attacker.y < 0 || attacker.y >= GRID_HEIGHT) return;
+    const atkTile = gameState.map[attacker.y * GRID_WIDTH + attacker.x];
+    if (!atkTile || atkTile.unit !== attacker) return;
+    const bDef = buildingType && BUILDINGS[buildingType];
+    if (!bDef || typeof bDef.cost !== 'number') return;
+    const loot = Math.floor(bDef.cost / 2);
+    if (loot <= 0) return;
+    const atkPlayer = gameState.players[attacker.ownerId];
+    if (!atkPlayer || atkPlayer.isDefeated) return;
+    atkPlayer.gold += loot;
+    addLogEntry(
+        `${atkPlayer.name}的魔法兵摧毁${bDef.name}，获得造价一半的战利品 +${loot} 金币。`
+    );
+    showNotification(`魔法兵战利品 +${loot} 金币`, 'success');
 }

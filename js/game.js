@@ -2801,6 +2801,7 @@ function launchMissile(factoryTile, targetX, targetY) {
                 if (newHealth <= 0) {
                     if (bType === 'capital') {
                         destroyAllPlayerAssets(tile.ownerId);
+                        grantCapitalDestructionGoldBonus(currentPlayer.id);
                         checkGameOver();
                     } else if (bType === 'city' && actualBuildingTile.building.isCityAnchor) {
                         const ax = actualBuildingTile.building.anchorX;
@@ -3028,6 +3029,26 @@ function aiBuildMilitary(player, actions) {
     }
 }
 
+/** AI：格子是否为可普攻的敌对目标（中立海盗单位、敌方建筑；他人海盗船用 placedByPlayerId 判定） */
+function aiIsAttackableEnemyTile(t, playerId) {
+    if (t.unit && t.unit.ownerId !== playerId) return true;
+    if (!t.building) return false;
+    if (t.building.type === 'pirateShip') {
+        const builder = t.building.placedByPlayerId;
+        return builder == null || builder !== playerId;
+    }
+    const bOwn = getTileBuildingOwnerId(t);
+    return bOwn !== null && bOwn >= 0 && bOwn !== playerId;
+}
+
+/** 他人海盗船：降低“等效距离”，避免场上总有更近海盗兵时电脑永远不打船 */
+function aiEnemyPirateShipTargetBias(t, playerId) {
+    if (!t.building || t.building.type !== 'pirateShip') return 0;
+    const builder = t.building.placedByPlayerId;
+    if (builder != null && builder === playerId) return 0;
+    return 4;
+}
+
 function aiMoveAndAttack(player, actions) {
     const myUnits = [];
     for (let i = 0; i < gameState.map.length; i++) {
@@ -3069,21 +3090,21 @@ function aiMoveAndAttack(player, actions) {
             continue;
         }
         
-        // 寻找最近的敌方目标
+        // 寻找敌方目标：真实距离用于射程/移动；他人海盗船带优先级偏置以免只清海盗不打船
         let nearestEnemy = null;
         let nearestDist = Infinity;
+        let bestWeighted = Infinity;
         
         for (let i = 0; i < gameState.map.length; i++) {
             const t = gameState.map[i];
-            const bOwn = t.building ? getTileBuildingOwnerId(t) : null;
-            const isEnemyBuilding = t.building && bOwn !== null && bOwn >= 0 && bOwn !== player.id;
-            const isEnemy = (t.unit && t.unit.ownerId !== player.id) || isEnemyBuilding;
-            if (isEnemy) {
-                const dist = Math.abs(t.x - ux) + Math.abs(t.y - uy);
-                if (dist < nearestDist) {
-                    nearestDist = dist;
-                    nearestEnemy = t;
-                }
+            if (!aiIsAttackableEnemyTile(t, player.id)) continue;
+            const dist = Math.abs(t.x - ux) + Math.abs(t.y - uy);
+            const bias = aiEnemyPirateShipTargetBias(t, player.id);
+            const weighted = Math.max(0, dist - bias);
+            if (weighted < bestWeighted || (weighted === bestWeighted && dist < nearestDist)) {
+                bestWeighted = weighted;
+                nearestDist = dist;
+                nearestEnemy = t;
             }
         }
         
