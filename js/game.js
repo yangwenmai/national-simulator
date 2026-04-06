@@ -2379,7 +2379,12 @@ function pirateAttackUnit(pirateTile, targetTile) {
 // 海盗攻击目标建筑
 function pirateAttackBuilding(pirateTile, targetTile) {
     const building = targetTile.building;
+    if (!building) return;
     const buildingType = building.type;
+    
+    // 海盗不攻击海盗船
+    if (buildingType === 'pirateShip') return;
+    
     const buildingDef = BUILDINGS[buildingType];
     const buildingName = buildingType === 'capital' ? '首都' : (buildingDef ? buildingDef.name : '未知建筑');
     const targetPlayer = gameState.players[targetTile.ownerId];
@@ -2393,12 +2398,16 @@ function pirateAttackBuilding(pirateTile, targetTile) {
     
     if (building.health <= 0) {
         if (buildingType === 'capital') {
-            building.health = 1;
-            addLogEntry(`海盗猛攻${targetPlayer.name}的首都，造成${damage}点伤害！首都岌岌可危！`);
+            targetTile.building = null;
+            addLogEntry(`海盗摧毁了${targetPlayer.name}的首都！`);
+            destroyAllPlayerAssets(targetTile.ownerId);
+            checkGameOver();
         } else {
             addLogEntry(`海盗摧毁了${targetPlayer.name}的${buildingName}！`);
             targetTile.building = null;
         }
+        syncPlayerBuildings(targetTile.ownerId);
+        updatePlayerIncome(targetPlayer);
     } else {
         addLogEntry(`海盗攻击了${targetPlayer.name}的${buildingName}，造成${damage}点伤害。`);
     }
@@ -2440,8 +2449,8 @@ function processPirateAttack() {
                     nearestTarget = { tile: targetTile, type: 'unit' };
                 }
             }
-            // 攻击任何玩家的建筑
-            if (targetTile.building && targetTile.ownerId !== null && targetTile.ownerId !== -1) {
+            // 攻击任何玩家的建筑（但不攻击海盗船）
+            if (targetTile.building && targetTile.building.type !== 'pirateShip' && targetTile.ownerId !== null && targetTile.ownerId !== -1) {
                 if (dist < nearestDist) {
                     nearestDist = dist;
                     nearestTarget = { tile: targetTile, type: 'building' };
@@ -2493,8 +2502,8 @@ function processPirateAttack() {
                     break;
                 }
                 
-                // 路上遇到敌方建筑 -> 停在建筑旁攻击
-                if (stepTile.building && stepTile.ownerId !== null && stepTile.ownerId !== -1) {
+                // 路上遇到敌方建筑 -> 停在建筑旁攻击（但不攻击海盗船）
+                if (stepTile.building && stepTile.building.type !== 'pirateShip' && stepTile.ownerId !== null && stepTile.ownerId !== -1) {
                     actionHappened = true;
                     pirateAttackBuilding(pirateTile, stepTile);
                     if (finalStep) {
@@ -2535,7 +2544,7 @@ function processPirateAttack() {
                             pirateAttackUnit(finalTile, targetTile);
                             break;
                         }
-                        if (targetTile.building && targetTile.ownerId !== null && targetTile.ownerId !== -1) {
+                        if (targetTile.building && targetTile.building.type !== 'pirateShip' && targetTile.ownerId !== null && targetTile.ownerId !== -1) {
                             pirateAttackBuilding(finalTile, targetTile);
                             break;
                         }
@@ -2643,10 +2652,6 @@ function launchMissile(factoryTile, targetX, targetY) {
                 
                 const oldHealth = actualBuildingTile.building.health;
                 let newHealth = Math.max(0, oldHealth - damage);
-                
-                if (bType === 'capital') {
-                    newHealth = Math.max(50, newHealth);
-                }
                 actualBuildingTile.building.health = newHealth;
                 
                 if (bType === 'city' && actualBuildingTile.building.isCityAnchor) {

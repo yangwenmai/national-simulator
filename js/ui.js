@@ -1158,24 +1158,17 @@ function updateEnchantmentOptions() {
 }
 
 // 将屏幕事件坐标转换为地图格子坐标（统一计算，点击和悬浮共用）
+// 直接用相对位置比例 × 格子数，避免多级浮点运算累积误差
 function eventToTileCoords(event) {
     const rect = canvas.getBoundingClientRect();
-    const cssX = event.clientX - rect.left;
-    const cssY = event.clientY - rect.top;
+    if (rect.width === 0 || rect.height === 0) return { x: 0, y: 0 };
 
-    // 从 CSS 显示尺寸映射到 canvas 内部像素
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const canvasX = cssX * scaleX;
-    const canvasY = cssY * scaleY;
-
-    // 使用 canvas 内部像素 / 整数格子尺寸，避免浮点累积误差
-    const cellW = canvas.width / GRID_WIDTH;
-    const cellH = canvas.height / GRID_HEIGHT;
+    const relX = (event.clientX - rect.left) / rect.width;
+    const relY = (event.clientY - rect.top) / rect.height;
 
     return {
-        x: Math.min(GRID_WIDTH - 1, Math.max(0, Math.floor(canvasX / cellW))),
-        y: Math.min(GRID_HEIGHT - 1, Math.max(0, Math.floor(canvasY / cellH)))
+        x: Math.min(GRID_WIDTH - 1, Math.max(0, Math.floor(relX * GRID_WIDTH))),
+        y: Math.min(GRID_HEIGHT - 1, Math.max(0, Math.floor(relY * GRID_HEIGHT)))
     };
 }
 
@@ -1272,10 +1265,19 @@ function handleBuildModeClick(x, y) {
         return;
     }
     
-    // 检查是否是当前玩家的领土
-    if (clickedTile.ownerId !== currentPlayer.id) {
-        showNotification('只能在自己的领土上建造建筑！', 'error');
-        return;
+    // 海盗船特殊规则：只能放在无主水域上
+    const isWaterOnlyBuilding = BUILDINGS[buildingType] && BUILDINGS[buildingType].waterOnly;
+    
+    if (isWaterOnlyBuilding) {
+        if (clickedTile.ownerId !== null) {
+            showNotification(`${BUILDINGS[buildingType].name}只能建在无主水域上！`, 'error');
+            return;
+        }
+    } else {
+        if (clickedTile.ownerId !== currentPlayer.id) {
+            showNotification('只能在自己的领土上建造建筑！', 'error');
+            return;
+        }
     }
     
     // 如果点击的格子有建筑或单位，退出建造模式并选中该格子
@@ -1301,7 +1303,7 @@ function handleBuildModeClick(x, y) {
     }
     
     // 检查地形约束
-    if (BUILDINGS[buildingType] && BUILDINGS[buildingType].waterOnly) {
+    if (isWaterOnlyBuilding) {
         if (clickedTile.terrain !== 'water') {
             showNotification(`${BUILDINGS[buildingType].name}只能建在水域上！`, 'error');
             return;
@@ -1495,8 +1497,9 @@ function exitBuildMode() {
     gameState.buildMode = false;
     gameState.selectedBuildingType = null;
     
-    // 隐藏取消按钮
     hideElement('cancel-action-btn');
+    updateCursor('default');
+    clearTileHighlights();
 }
 
 // 开始移动模式
@@ -1529,10 +1532,8 @@ function startMoveMode() {
 function exitMoveMode() {
     gameState.moveMode = false;
     
-    // 隐藏取消按钮
     hideElement('cancel-action-btn');
-    
-    // 重绘地图
+    updateCursor('default');
     drawMap();
 }
 
@@ -1566,10 +1567,8 @@ function startAttackMode() {
 function exitAttackMode() {
     gameState.attackMode = false;
     
-    // 隐藏取消按钮
     hideElement('cancel-action-btn');
-    
-    // 重绘地图
+    updateCursor('default');
     drawMap();
 }
 
@@ -1605,17 +1604,17 @@ function exitRecruitMode() {
 
 // 更新鼠标光标样式
 function updateCursor(mode) {
-    // 根据不同模式设置不同的光标样式
+    // 所有自定义光标均使用 16 16 热点（图标中心），确保点击位置精准匹配视觉中心
     if (mode === 'build') {
-        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><rect x="7" y="7" width="10" height="10" rx="2" ry="2"/><path d="M12 3v18"/><path d="M3 12h18"/></svg>\'), auto';
+        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><rect x="7" y="7" width="10" height="10" rx="2" ry="2"/><path d="M12 3v18"/><path d="M3 12h18"/></svg>\') 16 16, auto';
     } else if (mode === 'recruit') {
-        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M12 11v8"/><path d="M8 15h8"/></svg>\'), auto';
+        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M12 11v8"/><path d="M8 15h8"/></svg>\') 16 16, auto';
     } else if (mode === 'attack') {
-        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>\'), auto';
+        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%23e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>\') 16 16, auto';
     } else if (mode === 'move') {
-        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%233498db" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7-7 7 7"/><path d="M12 2v20"/></svg>\'), auto';
+        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%233498db" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7-7 7 7"/><path d="M12 2v20"/></svg>\') 16 16, auto';
     } else if (mode === 'repair') {
-        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%232ecc71" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>\'), auto';
+        canvas.style.cursor = 'url(\'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="%232ecc71" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>\') 16 16, auto';
     } else if (mode === 'default') {
         canvas.style.cursor = 'default';
     }
@@ -1642,7 +1641,6 @@ function canRecruitMilitaryUnit(unitType) {
 
 // 重置所有游戏模式
 function resetGameModes() {
-    // 重置所有操作模式
     gameState.buildMode = false;
     gameState.selectedBuildingType = null;
     gameState.moveMode = false;
@@ -1653,12 +1651,11 @@ function resetGameModes() {
     gameState.selectedMissileFactory = null;
     gameState.selectedUnitType = null;
     
-    // 隐藏所有预览和取消按钮
     hideElement('cancel-action-btn');
     hideElement('building-preview');
     hideElement('unit-preview');
-    
-    // 重绘地图
+    updateCursor('default');
+    clearTileHighlights();
     drawMap();
 }
 
@@ -1931,19 +1928,20 @@ function highlightAvailableBuildTiles() {
             const tileIndex = y * GRID_WIDTH + x;
             const tile = gameState.map[tileIndex];
             
-            if (tile.ownerId === currentPlayer.id && !tile.building && !tile.unit) {
-                if (isWaterOnly) {
-                    if (tile.terrain !== 'water') continue;
-                } else {
-                    if (tile.terrain === 'water') continue;
-                }
+            if (isWaterOnly) {
+                // 水域专属建筑（海盗船）：只高亮无主水域
+                if (tile.ownerId !== null || tile.terrain !== 'water' || tile.building || tile.unit) continue;
+            } else {
+                // 普通建筑：必须在自己领地上
+                if (tile.ownerId !== currentPlayer.id || tile.building || tile.unit) continue;
+                if (tile.terrain === 'water') continue;
                 if (buildingType === 'mine' && tile.terrain !== 'mountain') continue;
-                
-                tile.highlight = {
-                    color: isWaterOnly ? 'rgba(52, 152, 219, 0.4)' : 'rgba(46, 204, 113, 0.4)',
-                    border: isWaterOnly ? '2px solid #2980b9' : '2px solid #27ae60'
-                };
             }
+            
+            tile.highlight = {
+                color: isWaterOnly ? 'rgba(52, 152, 219, 0.4)' : 'rgba(46, 204, 113, 0.4)',
+                border: isWaterOnly ? '2px solid #2980b9' : '2px solid #27ae60'
+            };
         }
     }
     
