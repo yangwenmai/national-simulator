@@ -14,46 +14,45 @@ function initGame() {
 }
 
 // 开始新游戏
-function startNewGame(playerCount = 2) {
-    console.log("开始新游戏，传入的玩家数量：", playerCount);
-    
-    // 确保玩家数量在2-5之间
+function startNewGame(playerCount = 2, aiPlayerIndices = [], mapSizeKey = null) {
     playerCount = Math.min(Math.max(playerCount, 2), 5);
-    console.log("调整后的玩家数量：", playerCount);
     
-    // 初始化游戏状态
-    initGameState(playerCount);
-    console.log("游戏状态初始化完成，玩家数组长度：", gameState.players.length);
+    // 设置地图尺寸
+    const sizeKey = mapSizeKey || getRecommendedMapSize(playerCount);
+    setMapSize(sizeKey);
     
-    // 初始化地图
+    initGameState(playerCount, aiPlayerIndices);
+    
     gameState.map = initializeMap();
-    
-    // 生成随机地形
     generateRandomTerrain(gameState.map);
-    
-    // 生成玩家起始区域
     generatePlayerStartingAreas(gameState.map, playerCount);
     
-    // 为所有玩家同步建筑数据
     for (let i = 0; i < gameState.players.length; i++) {
         syncPlayerBuildings(i);
         updatePlayerIncome(gameState.players[i]);
     }
     
-    // 更新游戏显示
+    // 地图初始化完毕后再调整画布并绘制
+    resizeCanvas();
     updateGameStateDisplay();
-    
-    // 绘制地图
     drawMap();
     
-    // 添加游戏开始日志
-    addLogEntry(`游戏开始！共${playerCount}个玩家参与。`);
+    const aiCount = aiPlayerIndices.length;
+    const humanCount = playerCount - aiCount;
+    if (aiCount > 0) {
+        addLogEntry(`游戏开始！${humanCount}个人类玩家 + ${aiCount}个电脑玩家参与。`);
+    } else {
+        addLogEntry(`游戏开始！共${playerCount}个玩家参与。`);
+    }
+    
+    // 如果第一个玩家是AI，自动执行AI回合
+    if (gameState.players[0].isAI) {
+        setTimeout(() => executeAITurn(), 800);
+    }
 }
 
 // 初始化游戏状态
-function initGameState(playerCount) {
-    console.log("初始化游戏状态，玩家数量：", playerCount);
-    
+function initGameState(playerCount, aiPlayerIndices = []) {
     gameState = {
         map: [],
         players: [],
@@ -63,11 +62,13 @@ function initGameState(playerCount) {
         selectedUnit: null,
         buildMode: false,
         selectedBuildingType: null,
-        buildingQueue: [], // 建筑队列，而不是单一的buildingInProgress
+        buildingQueue: [],
         moveMode: false,
         attackMode: false,
         repairMode: false,
         recruitMode: false,
+        missileMode: false,
+        selectedMissileFactory: null,
         selectedUnitType: null,
         isGameOver: false,
         winner: null,
@@ -76,26 +77,25 @@ function initGameState(playerCount) {
             bigArmoryFactoryBuiltThisRound: 0,
             barracksBuiltThisRound: 0
         },
-        // 领土控制相关
         territoryControlMax: 100,
         territoryControlLossPerTurn: 20,
-        // 游戏时间相关
         gameStartTime: Date.now(),
         gameTotalTime: 0,
         currentTurnStartTime: Date.now(),
-        playerTurnTimes: [] // 存储每个玩家在当前回合的用时
+        playerTurnTimes: [],
+        aiExecuting: false
     };
     
-    // 创建玩家
     for (let i = 0; i < playerCount; i++) {
-        // 检查是否有足够的颜色
         if (i >= PLAYER_COLORS.length) {
             console.error(`警告：没有为玩家${i+1}定义颜色！`);
         }
         
+        const isAI = aiPlayerIndices.includes(i);
+        
         gameState.players.push({
             id: i,
-            name: `玩家${i + 1}`,
+            name: isAI ? `电脑${i + 1}` : `玩家${i + 1}`,
             color: PLAYER_COLORS[i],
             gold: INITIAL_GOLD,
             income: 0,
@@ -104,19 +104,17 @@ function initGameState(playerCount) {
             units: [],
             enchantments: [],
             isDefeated: false,
+            isAI: isAI,
             totalTurnTime: 0,
             currentTurnTime: 0,
             turnCount: 0,
             maxTurnTime: 0,
-            minTurnTime: Infinity
+            minTurnTime: Infinity,
+            killHistory: []
         });
         
-        gameState.playerTurnTimes.push(0); // 初始化每个玩家的回合用时
-        
-        console.log(`创建玩家${i+1}，颜色：`, PLAYER_COLORS[i]);
+        gameState.playerTurnTimes.push(0);
     }
-    
-    console.log("游戏状态初始化完成，玩家数组：", gameState.players);
 }
 
 // 处理回合结束
@@ -167,6 +165,15 @@ function processEndOfTurn() {
     // 处理词条效果：生命恢复
     processEnchantmentRegeneration();
     
+    // 处理导弹工厂生产
+    processMissileProduction();
+    
+    // 处理海盗船刷新海盗
+    processPirateSpawn();
+    
+    // 处理海盗移动和攻击（海盗会向最近首都移动，沿途攻击单位和建筑）
+    processPirateAttack();
+    
     // 保存当前玩家建筑到玩家buildings列表
     syncPlayerBuildings(currentPlayer.id);
     
@@ -177,13 +184,6 @@ function processEndOfTurn() {
         // 如果回到第一个玩家，增加回合数
         if (gameState.currentPlayerIndex === 0) {
             gameState.turn++;
-            
-            // 重置军事建筑建造计数
-            gameState.factoryProduction = {
-                armoryFactoryBuiltThisRound: 0,
-                bigArmoryFactoryBuiltThisRound: 0,
-                barracksBuiltThisRound: 0
-            };
         }
     } while (gameState.players[gameState.currentPlayerIndex].isDefeated);
     
@@ -191,6 +191,13 @@ function processEndOfTurn() {
     
     // 重置当前回合开始时间
     gameState.currentTurnStartTime = Date.now();
+    
+    // 重置每个玩家的军事单位招募计数
+    gameState.factoryProduction = {
+        armoryFactoryBuiltThisRound: 0,
+        bigArmoryFactoryBuiltThisRound: 0,
+        barracksBuiltThisRound: 0
+    };
     
     // 处理收入
     nextPlayer.gold += nextPlayer.income;
@@ -492,6 +499,11 @@ function updatePlayerIncome(player) {
         }
     }
     
+    // 词条：淘金热 - 额外+80金币
+    if (player.enchantments && player.enchantments.includes('goldRush')) {
+        totalIncome += 80;
+    }
+    
     // 更新玩家收入和军事维护费
     player.income = totalIncome - militaryMaintenance + knowledgeIncome;
     player.militaryMaintenance = militaryMaintenance;
@@ -519,15 +531,6 @@ function buildBuilding(x, y, buildingType, isFromProgress = false) {
         return false;
     }
     
-    // 检查是否是军厂或大军厂，增加计数
-    if (buildingType === 'armoryFactory') {
-        gameState.factoryProduction.armoryFactoryBuiltThisRound++;
-    } else if (buildingType === 'bigArmoryFactory') {
-        gameState.factoryProduction.bigArmoryFactoryBuiltThisRound++;
-    } else if (buildingType === 'barracks') {
-        gameState.factoryProduction.barracksBuiltThisRound++;
-    }
-    
     // 仅当不是从建筑进度完成时扣除金币
     if (!isFromProgress) {
         currentPlayer.gold -= buildingCost;
@@ -548,6 +551,18 @@ function buildBuilding(x, y, buildingType, isFromProgress = false) {
     // 如果是图书馆，添加知识收益属性
     if (buildingType === 'library' && BUILDINGS[buildingType].knowledgeIncome) {
         newBuilding.knowledgeIncome = BUILDINGS[buildingType].knowledgeIncome;
+    }
+    
+    // 如果是导弹工厂，初始化导弹存储属性
+    if (buildingType === 'missileFactory') {
+        newBuilding.storedMissiles = 0;
+        newBuilding.missileBuilding = false;
+        newBuilding.missileBuildTurns = 0;
+    }
+    
+    // 如果是海盗船，初始化刷新计时器
+    if (buildingType === 'pirateShip') {
+        newBuilding.pirateSpawnTimer = 0;
     }
     
     // 设置到地图上
@@ -648,10 +663,9 @@ function findNearbyInjuredUnit(x, y, range = 3) {
                 // 检查是否是当前玩家的受伤单位
                 if (tile.unit && 
                     tile.unit.ownerId === currentPlayer.id && 
-                    tile.unit.health < UNITS[tile.unit.type].health) {
+                    tile.unit.health < (tile.unit.maxHealth || UNITS[tile.unit.type].health)) {
                     
-                    // 计算生命值百分比
-                    const healthPercent = tile.unit.health / UNITS[tile.unit.type].health;
+                    const healthPercent = tile.unit.health / (tile.unit.maxHealth || UNITS[tile.unit.type].health);
                     
                     injuredUnits.push({
                         unit: tile.unit,
@@ -672,9 +686,7 @@ function findNearbyInjuredUnit(x, y, range = 3) {
 
 // 治疗单位
 function healUnit(unit, amount) {
-    const maxHealth = UNITS[unit.type].health;
-    
-    // 增加生命值但不超过最大值
+    const maxHealth = unit.maxHealth || UNITS[unit.type].health;
     unit.health = Math.min(unit.health + amount, maxHealth);
 }
 
@@ -1781,13 +1793,11 @@ function processMagicSoldierAbility() {
         // 检查是否是当前玩家的受伤单位
         if (tile.unit && 
             tile.unit.ownerId === currentPlayer.id && 
-            tile.unit.health < UNITS[tile.unit.type].health * 0.1) { // 血量低于10%
+            tile.unit.health < (tile.unit.maxHealth || UNITS[tile.unit.type].health) * 0.1) {
             
-            // 检查是否已经使用过复活能力
             if (tile.unit.hasResurrected) continue;
             
-            // 复活单位（恢复满血）
-            tile.unit.health = UNITS[tile.unit.type].health;
+            tile.unit.health = tile.unit.maxHealth || UNITS[tile.unit.type].health;
             tile.unit.hasResurrected = true; // 标记已使用复活能力
             
             // 添加日志
@@ -2062,13 +2072,6 @@ function purchaseEnchantment(enchantmentId) {
         return false;
     }
     
-    // 检查是否拥有魔法学院
-    const hasMagicAcademy = currentPlayer.buildings.some(b => b.type === 'magicAcademy');
-    if (!hasMagicAcademy) {
-        showNotification('需要建造魔法学院才能购买词条！', 'error');
-        return false;
-    }
-    
     // 检查金币
     if (currentPlayer.gold < enchantment.cost) {
         showNotification('金币不足！', 'error');
@@ -2085,7 +2088,7 @@ function purchaseEnchantment(enchantmentId) {
     showNotification(`成功获得词条「${enchantment.name}」！`, 'success');
     
     // 如果是经济类词条，立即更新收入
-    if (enchantmentId === 'economicBoom') {
+    if (enchantmentId === 'economicBoom' || enchantmentId === 'goldRush') {
         updatePlayerIncome(currentPlayer);
     }
     
@@ -2103,7 +2106,7 @@ function processEnchantmentRegeneration() {
     for (let i = 0; i < gameState.map.length; i++) {
         const tile = gameState.map[i];
         if (tile.unit && tile.unit.ownerId === currentPlayer.id) {
-            const maxHealth = UNITS[tile.unit.type].health;
+            const maxHealth = tile.unit.maxHealth || UNITS[tile.unit.type].health;
             if (tile.unit.health < maxHealth) {
                 tile.unit.health = Math.min(tile.unit.health + 15, maxHealth);
                 healed = true;
@@ -2203,9 +2206,802 @@ function playerHasMagicAcademy(player) {
     return player.buildings.some(b => b.type === 'magicAcademy');
 }
 
+// 处理导弹工厂生产进度
+function processMissileProduction() {
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    
+    for (let i = 0; i < gameState.map.length; i++) {
+        const tile = gameState.map[i];
+        if (tile.ownerId === currentPlayer.id && tile.building && tile.building.type === 'missileFactory') {
+            const factory = tile.building;
+            
+            if (!factory.storedMissiles) factory.storedMissiles = 0;
+            
+            if (factory.missileBuilding) {
+                factory.missileBuildTurns--;
+                
+                if (factory.missileBuildTurns <= 0) {
+                    factory.storedMissiles++;
+                    factory.missileBuilding = false;
+                    factory.missileBuildTurns = 0;
+                    addLogEntry(`${currentPlayer.name}的导弹工厂(${tile.x},${tile.y})完成了一枚导弹的建造！当前存储: ${factory.storedMissiles}枚`);
+                    showNotification(`导弹建造完成！工厂存储: ${factory.storedMissiles}枚`, 'success');
+                }
+            }
+        }
+    }
+}
+
+// 处理海盗船刷新海盗
+function processPirateSpawn() {
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    let spawned = false;
+    
+    for (let i = 0; i < gameState.map.length; i++) {
+        const tile = gameState.map[i];
+        if (tile.ownerId === currentPlayer.id && tile.building && tile.building.type === 'pirateShip') {
+            const ship = tile.building;
+            if (ship.pirateSpawnTimer === undefined) ship.pirateSpawnTimer = 0;
+            
+            ship.pirateSpawnTimer++;
+            
+            if (ship.pirateSpawnTimer >= BUILDINGS.pirateShip.pirateSpawnInterval) {
+                ship.pirateSpawnTimer = 0;
+                
+                // 在船附近的空陆地格生成海盗
+                const spawnTile = findPirateSpawnTile(tile.x, tile.y);
+                if (spawnTile) {
+                    const pirateUnit = {
+                        type: 'pirate',
+                        health: UNITS.pirate.health,
+                        ownerId: -1,
+                        hasActed: false,
+                        hasMoved: false,
+                        hasAttacked: false,
+                        x: spawnTile.x,
+                        y: spawnTile.y,
+                        id: 'pirate_' + Date.now() + '_' + Math.floor(Math.random() * 1000)
+                    };
+                    spawnTile.unit = pirateUnit;
+                    spawned = true;
+                    addLogEntry(`${currentPlayer.name}的海盗船(${tile.x},${tile.y})刷新了一个海盗！`);
+                }
+            }
+        }
+    }
+    
+    if (spawned) {
+        updateGameStateDisplay();
+        drawMap();
+    }
+}
+
+// 为海盗刷新寻找附近的空地格
+function findPirateSpawnTile(shipX, shipY) {
+    for (let r = 1; r <= 3; r++) {
+        const candidates = [];
+        for (let dy = -r; dy <= r; dy++) {
+            for (let dx = -r; dx <= r; dx++) {
+                if (Math.abs(dx) + Math.abs(dy) > r) continue;
+                const nx = shipX + dx;
+                const ny = shipY + dy;
+                if (nx < 0 || nx >= GRID_WIDTH || ny < 0 || ny >= GRID_HEIGHT) continue;
+                const idx = ny * GRID_WIDTH + nx;
+                const tile = gameState.map[idx];
+                if (!tile.unit && !tile.building && tile.terrain !== 'water') {
+                    candidates.push(tile);
+                }
+            }
+        }
+        if (candidates.length > 0) {
+            return candidates[Math.floor(Math.random() * candidates.length)];
+        }
+    }
+    return null;
+}
+
+// BFS寻路：找到从起点到目标的最短路径（避开水域和障碍）
+function findPathBFS(startX, startY, targetX, targetY) {
+    const key = (x, y) => x + ',' + y;
+    const visited = new Set();
+    const queue = [{ x: startX, y: startY, path: [] }];
+    visited.add(key(startX, startY));
+    
+    const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    
+    while (queue.length > 0) {
+        const current = queue.shift();
+        
+        if (current.x === targetX && current.y === targetY) {
+            return current.path;
+        }
+        
+        for (const [dx, dy] of dirs) {
+            const nx = current.x + dx;
+            const ny = current.y + dy;
+            
+            if (nx < 0 || nx >= GRID_WIDTH || ny < 0 || ny >= GRID_HEIGHT) continue;
+            if (visited.has(key(nx, ny))) continue;
+            
+            const idx = ny * GRID_WIDTH + nx;
+            const tile = gameState.map[idx];
+            
+            if (tile.terrain === 'water') continue;
+            
+            visited.add(key(nx, ny));
+            queue.push({ x: nx, y: ny, path: [...current.path, { x: nx, y: ny }] });
+        }
+    }
+    
+    return null;
+}
+
+// 找到离海盗最近的首都位置
+function findNearestCapital(pirateX, pirateY) {
+    let nearest = null;
+    let nearestDist = Infinity;
+    
+    for (const player of gameState.players) {
+        if (player.defeated) continue;
+        const capitalPos = getCapitalPosition(player);
+        if (!capitalPos) continue;
+        
+        const dist = manhattanDistance(pirateX, pirateY, capitalPos.x, capitalPos.y);
+        if (dist < nearestDist) {
+            nearestDist = dist;
+            nearest = capitalPos;
+        }
+    }
+    
+    return nearest;
+}
+
+// 海盗攻击目标单位
+function pirateAttackUnit(pirateTile, targetTile) {
+    const target = targetTile.unit;
+    const targetPlayer = gameState.players[target.ownerId];
+    const targetUnitDef = UNITS[target.type];
+    const targetName = targetUnitDef ? targetUnitDef.name : '未知单位';
+    
+    const damage = Math.max(1, UNITS.pirate.attack - (targetUnitDef ? targetUnitDef.defense : 0));
+    target.health -= damage;
+    
+    if (target.health <= 0) {
+        addLogEntry(`海盗攻击并击杀了${targetPlayer.name}的${targetName}！`);
+        const unitIndex = targetPlayer.units.findIndex(u => u.id === target.id);
+        if (unitIndex !== -1) targetPlayer.units.splice(unitIndex, 1);
+        targetTile.unit = null;
+    } else {
+        addLogEntry(`海盗攻击了${targetPlayer.name}的${targetName}，造成${damage}点伤害。`);
+    }
+}
+
+// 海盗攻击目标建筑
+function pirateAttackBuilding(pirateTile, targetTile) {
+    const building = targetTile.building;
+    const buildingType = building.type;
+    const buildingDef = BUILDINGS[buildingType];
+    const buildingName = buildingType === 'capital' ? '首都' : (buildingDef ? buildingDef.name : '未知建筑');
+    const targetPlayer = gameState.players[targetTile.ownerId];
+    
+    let damage = UNITS.pirate.attack;
+    // 建筑享有25%伤害减免
+    damage = Math.floor(damage * 0.75);
+    damage = Math.max(1, damage);
+    
+    building.health -= damage;
+    
+    if (building.health <= 0) {
+        if (buildingType === 'capital') {
+            building.health = 1;
+            addLogEntry(`海盗猛攻${targetPlayer.name}的首都，造成${damage}点伤害！首都岌岌可危！`);
+        } else {
+            addLogEntry(`海盗摧毁了${targetPlayer.name}的${buildingName}！`);
+            targetTile.building = null;
+        }
+    } else {
+        addLogEntry(`海盗攻击了${targetPlayer.name}的${buildingName}，造成${damage}点伤害。`);
+    }
+}
+
+// 处理海盗移动和攻击（在每个玩家回合末执行）
+function processPirateAttack() {
+    let actionHappened = false;
+    
+    const pirateTiles = [];
+    for (let i = 0; i < gameState.map.length; i++) {
+        const tile = gameState.map[i];
+        if (tile.unit && tile.unit.ownerId === -1 && tile.unit.type === 'pirate') {
+            pirateTiles.push(tile);
+        }
+    }
+    
+    for (const pirateTile of pirateTiles) {
+        const pirate = pirateTile.unit;
+        if (!pirate) continue;
+        
+        const moveRange = UNITS.pirate.moveRange;
+        const attackRange = UNITS.pirate.attackRange;
+        
+        // 先检查攻击范围内是否有可攻击的目标（单位或建筑）
+        let attacked = false;
+        let nearestTarget = null;
+        let nearestDist = Infinity;
+        
+        for (let j = 0; j < gameState.map.length; j++) {
+            const targetTile = gameState.map[j];
+            const dist = Math.abs(pirateTile.x - targetTile.x) + Math.abs(pirateTile.y - targetTile.y);
+            if (dist > attackRange || dist === 0) continue;
+            
+            // 攻击任何玩家的单位（包括经济单位）
+            if (targetTile.unit && targetTile.unit.ownerId !== -1) {
+                if (dist < nearestDist) {
+                    nearestDist = dist;
+                    nearestTarget = { tile: targetTile, type: 'unit' };
+                }
+            }
+            // 攻击任何玩家的建筑
+            if (targetTile.building && targetTile.ownerId !== null && targetTile.ownerId !== -1) {
+                if (dist < nearestDist) {
+                    nearestDist = dist;
+                    nearestTarget = { tile: targetTile, type: 'building' };
+                }
+            }
+        }
+        
+        if (nearestTarget) {
+            actionHappened = true;
+            attacked = true;
+            if (nearestTarget.type === 'unit') {
+                pirateAttackUnit(pirateTile, nearestTarget.tile);
+            } else {
+                pirateAttackBuilding(pirateTile, nearestTarget.tile);
+            }
+        }
+        
+        // 如果没有攻击，则向最近的首都移动
+        if (!attacked) {
+            const capitalPos = findNearestCapital(pirateTile.x, pirateTile.y);
+            if (!capitalPos) continue;
+            
+            const path = findPathBFS(pirateTile.x, pirateTile.y, capitalPos.x, capitalPos.y);
+            if (!path || path.length === 0) continue;
+            
+            // 沿路径移动，最多移动 moveRange 步
+            let stepsToMove = Math.min(moveRange, path.length);
+            let finalStep = null;
+            
+            for (let s = 0; s < stepsToMove; s++) {
+                const step = path[s];
+                const stepIdx = step.y * GRID_WIDTH + step.x;
+                const stepTile = gameState.map[stepIdx];
+                
+                // 路上遇到敌方单位 -> 停下并攻击
+                if (stepTile.unit && stepTile.unit.ownerId !== -1) {
+                    actionHappened = true;
+                    pirateAttackUnit(pirateTile, stepTile);
+                    // 移动到攻击目标前一格
+                    if (finalStep) {
+                        const finalIdx = finalStep.y * GRID_WIDTH + finalStep.x;
+                        const finalTile = gameState.map[finalIdx];
+                        pirate.x = finalStep.x;
+                        pirate.y = finalStep.y;
+                        finalTile.unit = pirate;
+                        pirateTile.unit = null;
+                        actionHappened = true;
+                    }
+                    break;
+                }
+                
+                // 路上遇到敌方建筑 -> 停在建筑旁攻击
+                if (stepTile.building && stepTile.ownerId !== null && stepTile.ownerId !== -1) {
+                    actionHappened = true;
+                    pirateAttackBuilding(pirateTile, stepTile);
+                    if (finalStep) {
+                        const finalIdx = finalStep.y * GRID_WIDTH + finalStep.x;
+                        const finalTile = gameState.map[finalIdx];
+                        pirate.x = finalStep.x;
+                        pirate.y = finalStep.y;
+                        finalTile.unit = pirate;
+                        pirateTile.unit = null;
+                    }
+                    break;
+                }
+                
+                // 该格可以通行
+                if (!stepTile.unit && !stepTile.building) {
+                    finalStep = step;
+                } else {
+                    break;
+                }
+                
+                // 已到达最后可移动步数，执行移动
+                if (s === stepsToMove - 1 && finalStep) {
+                    const finalIdx = finalStep.y * GRID_WIDTH + finalStep.x;
+                    const finalTile = gameState.map[finalIdx];
+                    pirate.x = finalStep.x;
+                    pirate.y = finalStep.y;
+                    finalTile.unit = pirate;
+                    pirateTile.unit = null;
+                    actionHappened = true;
+                    
+                    // 移动后再检查攻击范围内是否有目标
+                    for (let j = 0; j < gameState.map.length; j++) {
+                        const targetTile = gameState.map[j];
+                        const dist = Math.abs(finalStep.x - targetTile.x) + Math.abs(finalStep.y - targetTile.y);
+                        if (dist > attackRange || dist === 0) continue;
+                        
+                        if (targetTile.unit && targetTile.unit.ownerId !== -1) {
+                            pirateAttackUnit(finalTile, targetTile);
+                            break;
+                        }
+                        if (targetTile.building && targetTile.ownerId !== null && targetTile.ownerId !== -1) {
+                            pirateAttackBuilding(finalTile, targetTile);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    if (actionHappened) {
+        updateGameStateDisplay();
+        drawMap();
+    }
+}
+
+// 开始建造导弹
+function startMissileBuild(factoryTile) {
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    const factory = factoryTile.building;
+    const missileCost = BUILDINGS.missileFactory.missileCost;
+    const maxMissiles = BUILDINGS.missileFactory.maxMissiles;
+    
+    if (!factory.storedMissiles) factory.storedMissiles = 0;
+    
+    if (factory.missileBuilding) {
+        showNotification(`该工厂正在建造导弹中（剩余${factory.missileBuildTurns}回合）`, 'error');
+        return false;
+    }
+    
+    if (factory.storedMissiles >= maxMissiles) {
+        showNotification(`导弹库存已满（${maxMissiles}/${maxMissiles}）！`, 'error');
+        return false;
+    }
+    
+    if (currentPlayer.gold < missileCost) {
+        showNotification(`金币不足！建造导弹需要${missileCost}金币。`, 'error');
+        return false;
+    }
+    
+    currentPlayer.gold -= missileCost;
+    factory.missileBuilding = true;
+    factory.missileBuildTurns = BUILDINGS.missileFactory.missileBuildTime;
+    
+    addLogEntry(`${currentPlayer.name}开始在导弹工厂建造导弹，花费${missileCost}金币，${factory.missileBuildTurns}回合后完成。`);
+    showNotification(`开始建造导弹，${factory.missileBuildTurns}回合后完成。`, 'success');
+    
+    updateGameStateDisplay();
+    return true;
+}
+
+// 发射导弹（AoE攻击）
+function launchMissile(factoryTile, targetX, targetY) {
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    const factory = factoryTile.building;
+    
+    if (!factory.storedMissiles || factory.storedMissiles <= 0) {
+        showNotification('没有可发射的导弹！', 'error');
+        return false;
+    }
+    
+    factory.storedMissiles--;
+    
+    let radius = 3;
+    let damageMultiplier = 1.0;
+    
+    // 词条：导弹专家 - 伤害+50%，半径+1
+    if (currentPlayer.enchantments && currentPlayer.enchantments.includes('missileExpert')) {
+        damageMultiplier = 1.5;
+        radius = 4;
+    }
+    
+    let totalDamageDealt = 0;
+    let buildingsHit = 0;
+    let unitsHit = 0;
+    
+    for (let dy = -radius; dy <= radius; dy++) {
+        for (let dx = -radius; dx <= radius; dx++) {
+            const nx = targetX + dx;
+            const ny = targetY + dy;
+            
+            if (nx < 0 || nx >= GRID_WIDTH || ny < 0 || ny >= GRID_HEIGHT) continue;
+            
+            const dist = Math.abs(dx) + Math.abs(dy);
+            if (dist > radius) continue;
+            
+            const idx = ny * GRID_WIDTH + nx;
+            const tile = gameState.map[idx];
+            
+            // 对敌方建筑造成伤害
+            if (tile.building && tile.ownerId !== null && tile.ownerId !== currentPlayer.id) {
+                let damage = Math.floor((100 + Math.random() * 101) * damageMultiplier);
+                
+                let actualBuildingTile = tile;
+                if (tile.building.type === 'city' && tile.building.isCityPart) {
+                    const anchorIdx = tile.building.cityAnchorY * GRID_WIDTH + tile.building.cityAnchorX;
+                    actualBuildingTile = gameState.map[anchorIdx];
+                }
+                
+                const bType = actualBuildingTile.building.type;
+                const bName = actualBuildingTile.building.name;
+                
+                if (bType === 'capital') {
+                    damage = Math.floor(damage * 0.3);
+                }
+                
+                const oldHealth = actualBuildingTile.building.health;
+                let newHealth = Math.max(0, oldHealth - damage);
+                
+                if (bType === 'capital') {
+                    newHealth = Math.max(50, newHealth);
+                }
+                actualBuildingTile.building.health = newHealth;
+                
+                if (bType === 'city' && actualBuildingTile.building.isCityAnchor) {
+                    const ax = actualBuildingTile.building.anchorX;
+                    const ay = actualBuildingTile.building.anchorY;
+                    const cityTiles = [
+                        { tx: ax + 1, ty: ay }, { tx: ax, ty: ay + 1 }, { tx: ax + 1, ty: ay + 1 }
+                    ];
+                    for (const { tx, ty } of cityTiles) {
+                        if (tx >= 0 && tx < GRID_WIDTH && ty >= 0 && ty < GRID_HEIGHT) {
+                            const ci = ty * GRID_WIDTH + tx;
+                            if (gameState.map[ci].building && gameState.map[ci].building.type === 'city') {
+                                gameState.map[ci].building.health = newHealth;
+                            }
+                        }
+                    }
+                }
+                
+                totalDamageDealt += damage;
+                buildingsHit++;
+                
+                if (newHealth <= 0) {
+                    if (bType === 'capital') {
+                        destroyAllPlayerAssets(tile.ownerId);
+                        checkGameOver();
+                    } else if (bType === 'city' && actualBuildingTile.building.isCityAnchor) {
+                        const ax = actualBuildingTile.building.anchorX;
+                        const ay = actualBuildingTile.building.anchorY;
+                        const cTiles = [
+                            { tx: ax, ty: ay }, { tx: ax + 1, ty: ay },
+                            { tx: ax, ty: ay + 1 }, { tx: ax + 1, ty: ay + 1 }
+                        ];
+                        for (const { tx, ty } of cTiles) {
+                            if (tx >= 0 && tx < GRID_WIDTH && ty >= 0 && ty < GRID_HEIGHT) {
+                                gameState.map[ty * GRID_WIDTH + tx].building = null;
+                            }
+                        }
+                    } else {
+                        actualBuildingTile.building = null;
+                    }
+                    addLogEntry(`导弹摧毁了${bName}！`);
+                }
+            }
+            
+            // 对敌方军事单位造成伤害
+            if (tile.unit && tile.unit.ownerId !== currentPlayer.id) {
+                let unitDamage = Math.floor((80 + Math.random() * 81) * damageMultiplier);
+                const unit = tile.unit;
+                const unitDef = UNITS[unit.type];
+                const unitName = unitDef ? unitDef.name : '未知单位';
+                
+                const oldHP = unit.health;
+                unit.health = Math.max(0, oldHP - unitDamage);
+                
+                totalDamageDealt += unitDamage;
+                unitsHit++;
+                
+                if (unit.health <= 0) {
+                    tile.unit = null;
+                    addLogEntry(`导弹炸死了敌方${unitName}！`);
+                } else {
+                    addLogEntry(`导弹对敌方${unitName}造成${unitDamage}点伤害（${oldHP}→${unit.health}）`);
+                }
+            }
+        }
+    }
+    
+    let hitSummary = [];
+    if (buildingsHit > 0) hitSummary.push(`${buildingsHit}座建筑`);
+    if (unitsHit > 0) hitSummary.push(`${unitsHit}个单位`);
+    const hitStr = hitSummary.length > 0 ? hitSummary.join('和') : '无目标';
+    
+    addLogEntry(`${currentPlayer.name}向(${targetX},${targetY})发射导弹！命中${hitStr}，总计造成${totalDamageDealt}点伤害。`);
+    showNotification(`导弹命中${hitStr}，造成${totalDamageDealt}点伤害！`, 'success');
+    
+    // 同步所有受影响玩家的建筑数据
+    for (let p = 0; p < gameState.players.length; p++) {
+        syncPlayerBuildings(p);
+        updatePlayerIncome(gameState.players[p]);
+    }
+    
+    updateGameStateDisplay();
+    drawMap();
+    return true;
+}
+
 // 格式化数字为带千分位的格式
 function formatNumber(num) {
     return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+// ====================== AI 电脑玩家逻辑 ======================
+
+function executeAITurn() {
+    const player = gameState.players[gameState.currentPlayerIndex];
+    if (!player || !player.isAI || player.isDefeated || gameState.isGameOver) return;
+    
+    gameState.aiExecuting = true;
+    addLogEntry(`🤖 ${player.name}正在思考...`);
+    
+    const actions = [];
+    
+    // 1. 经济建设：优先建造收入建筑
+    aiBuildEconomy(player, actions);
+    
+    // 2. 军事建设：有钱就造兵营和单位
+    aiBuildMilitary(player, actions);
+    
+    // 3. 移动和攻击
+    aiMoveAndAttack(player, actions);
+    
+    // 执行完所有操作后结束回合
+    setTimeout(() => {
+        gameState.aiExecuting = false;
+        endTurn();
+    }, 400);
+}
+
+function aiBuildEconomy(player, actions) {
+    const ownedTiles = [];
+    for (let i = 0; i < gameState.map.length; i++) {
+        const tile = gameState.map[i];
+        if (tile.ownerId === player.id && !tile.building && !tile.unit && tile.terrain !== 'water') {
+            const inQueue = gameState.buildingQueue.some(bp => bp.x === tile.x && bp.y === tile.y);
+            if (!inQueue) ownedTiles.push(tile);
+        }
+    }
+    
+    if (ownedTiles.length === 0) return;
+    
+    // 优先级：矿场（山地）> 农场 > 贸易站
+    const mountainTiles = ownedTiles.filter(t => t.terrain === 'mountain');
+    
+    // 造矿场
+    if (mountainTiles.length > 0 && player.gold >= BUILDINGS.mine.cost) {
+        const t = mountainTiles[Math.floor(Math.random() * mountainTiles.length)];
+        startBuilding(t.x, t.y, 'mine');
+        actions.push('mine');
+    }
+    
+    // 造农场
+    const plainTiles = ownedTiles.filter(t => t.terrain !== 'mountain');
+    if (plainTiles.length > 0 && player.gold >= BUILDINGS.farm.cost) {
+        const farmCount = player.buildings.filter(b => b.type === 'farm').length;
+        const queueFarms = gameState.buildingQueue.filter(bp => bp.type === 'farm' && bp.ownerId === player.id).length;
+        if (farmCount + queueFarms < 3) {
+            const t = plainTiles[Math.floor(Math.random() * plainTiles.length)];
+            startBuilding(t.x, t.y, 'farm');
+            actions.push('farm');
+        }
+    }
+    
+    // 有余钱造银行
+    if (player.gold >= BUILDINGS.bank.cost + 200 && plainTiles.length > 1) {
+        const bankCount = player.buildings.filter(b => b.type === 'bank').length;
+        if (bankCount < 1) {
+            const available = plainTiles.filter(t => !gameState.buildingQueue.some(bp => bp.x === t.x && bp.y === t.y));
+            if (available.length > 0) {
+                const t = available[Math.floor(Math.random() * available.length)];
+                startBuilding(t.x, t.y, 'bank');
+                actions.push('bank');
+            }
+        }
+    }
+    
+    // 造防御塔
+    if (player.gold >= BUILDINGS.tower.cost && plainTiles.length > 0) {
+        const towerCount = player.buildings.filter(b => b.type === 'tower').length;
+        if (towerCount < 2) {
+            const available = plainTiles.filter(t => !gameState.buildingQueue.some(bp => bp.x === t.x && bp.y === t.y));
+            if (available.length > 0) {
+                const t = available[Math.floor(Math.random() * available.length)];
+                startBuilding(t.x, t.y, 'tower');
+                actions.push('tower');
+            }
+        }
+    }
+}
+
+function aiBuildMilitary(player, actions) {
+    const hasBarracks = player.buildings.some(b => b.type === 'barracks');
+    const hasArmory = player.buildings.some(b => b.type === 'armoryFactory');
+    const barracksInQueue = gameState.buildingQueue.some(bp => bp.type === 'barracks' && bp.ownerId === player.id);
+    
+    // 没有兵营就造兵营
+    if (!hasBarracks && !barracksInQueue && player.gold >= BUILDINGS.barracks.cost) {
+        const ownedTiles = [];
+        for (let i = 0; i < gameState.map.length; i++) {
+            const tile = gameState.map[i];
+            if (tile.ownerId === player.id && !tile.building && !tile.unit && tile.terrain !== 'water' && tile.terrain !== 'mountain') {
+                if (!gameState.buildingQueue.some(bp => bp.x === tile.x && bp.y === tile.y)) {
+                    ownedTiles.push(tile);
+                }
+            }
+        }
+        if (ownedTiles.length > 0) {
+            const t = ownedTiles[Math.floor(Math.random() * ownedTiles.length)];
+            startBuilding(t.x, t.y, 'barracks');
+            actions.push('barracks');
+        }
+    }
+    
+    // 有兵营后造兵
+    if (hasBarracks && player.gold >= 100) {
+        const unitCount = gameState.map.filter(t => t.unit && t.unit.ownerId === player.id).length;
+        if (unitCount < 5) {
+            // 找兵营附近的空位
+            const barracksLocations = [];
+            for (let i = 0; i < gameState.map.length; i++) {
+                const tile = gameState.map[i];
+                if (tile.ownerId === player.id && tile.building && tile.building.type === 'barracks') {
+                    barracksLocations.push(tile);
+                }
+            }
+            
+            for (const bTile of barracksLocations) {
+                const nearbyEmpty = findNearbyEmptyTile(bTile.x, bTile.y, player.id);
+                if (nearbyEmpty) {
+                    // 选择可负担的单位
+                    let unitType = 'infantry';
+                    if (hasArmory && player.gold >= (UNITS.tank ? UNITS.tank.cost : 999)) {
+                        unitType = 'tank';
+                    } else if (player.gold >= (UNITS.archer ? UNITS.archer.cost : 500)) {
+                        unitType = Math.random() < 0.4 ? 'archer' : 'infantry';
+                    }
+                    
+                    if (UNITS[unitType] && player.gold >= UNITS[unitType].cost) {
+                        recruitUnit(nearbyEmpty.x, nearbyEmpty.y, unitType);
+                        actions.push(unitType);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
+function aiMoveAndAttack(player, actions) {
+    const myUnits = [];
+    for (let i = 0; i < gameState.map.length; i++) {
+        const tile = gameState.map[i];
+        if (tile.unit && tile.unit.ownerId === player.id && !tile.unit.hasActed) {
+            myUnits.push({ tile, x: tile.x, y: tile.y });
+        }
+    }
+    
+    for (const { tile: unitTile, x: ux, y: uy } of myUnits) {
+        const unit = unitTile.unit;
+        if (!unit || unit.hasActed) continue;
+        
+        // 寻找最近的敌方目标
+        let nearestEnemy = null;
+        let nearestDist = Infinity;
+        
+        for (let i = 0; i < gameState.map.length; i++) {
+            const t = gameState.map[i];
+            const isEnemy = (t.unit && t.unit.ownerId !== player.id) || 
+                           (t.building && t.ownerId !== null && t.ownerId !== player.id);
+            if (isEnemy) {
+                const dist = Math.abs(t.x - ux) + Math.abs(t.y - uy);
+                if (dist < nearestDist) {
+                    nearestDist = dist;
+                    nearestEnemy = t;
+                }
+            }
+        }
+        
+        if (!nearestEnemy) continue;
+        
+        const unitDef = UNITS[unit.type];
+        const moveRange = unitDef ? unitDef.moveRange : 2;
+        const attackRange = unitDef ? unitDef.attackRange : 1;
+        
+        // 如果在攻击范围内，直接攻击
+        if (nearestDist <= attackRange && !unit.hasAttacked) {
+            gameState.selectedUnit = unit;
+            gameState.selectedTile = { x: ux, y: uy };
+            
+            attackTarget(ux, uy, nearestEnemy.x, nearestEnemy.y);
+            actions.push('attack');
+            continue;
+        }
+        
+        // 否则向敌方方向移动
+        if (!unit.hasMoved) {
+            let bestX = ux, bestY = uy;
+            let bestDist = nearestDist;
+            
+            for (let dy = -moveRange; dy <= moveRange; dy++) {
+                for (let dx = -moveRange; dx <= moveRange; dx++) {
+                    if (Math.abs(dx) + Math.abs(dy) > moveRange) continue;
+                    const nx = ux + dx;
+                    const ny = uy + dy;
+                    if (nx < 0 || nx >= GRID_WIDTH || ny < 0 || ny >= GRID_HEIGHT) continue;
+                    
+                    const idx = ny * GRID_WIDTH + nx;
+                    const target = gameState.map[idx];
+                    if (target.unit || target.building || target.terrain === 'water') continue;
+                    
+                    const distToEnemy = Math.abs(target.x - nearestEnemy.x) + Math.abs(target.y - nearestEnemy.y);
+                    if (distToEnemy < bestDist) {
+                        bestDist = distToEnemy;
+                        bestX = nx;
+                        bestY = ny;
+                    }
+                }
+            }
+            
+            if (bestX !== ux || bestY !== uy) {
+                moveUnitDirect(ux, uy, bestX, bestY);
+                actions.push('move');
+            }
+        }
+    }
+}
+
+function findNearbyEmptyTile(cx, cy, playerId) {
+    for (let r = 1; r <= 3; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+            for (let dx = -r; dx <= r; dx++) {
+                if (Math.abs(dx) + Math.abs(dy) > r) continue;
+                const nx = cx + dx;
+                const ny = cy + dy;
+                if (nx < 0 || nx >= GRID_WIDTH || ny < 0 || ny >= GRID_HEIGHT) continue;
+                const idx = ny * GRID_WIDTH + nx;
+                const tile = gameState.map[idx];
+                if (tile.ownerId === playerId && !tile.building && !tile.unit && tile.terrain !== 'water') {
+                    return tile;
+                }
+            }
+        }
+    }
+    return null;
+}
+
+function moveUnitDirect(fromX, fromY, toX, toY) {
+    const fromIdx = fromY * GRID_WIDTH + fromX;
+    const toIdx = toY * GRID_WIDTH + toX;
+    const fromTile = gameState.map[fromIdx];
+    const toTile = gameState.map[toIdx];
+    
+    if (!fromTile.unit) return false;
+    
+    const unit = fromTile.unit;
+    toTile.unit = unit;
+    fromTile.unit = null;
+    unit.hasMoved = true;
+    
+    // 占领领土
+    const player = gameState.players[unit.ownerId];
+    if (toTile.ownerId !== unit.ownerId) {
+        toTile.ownerId = unit.ownerId;
+    }
+    
+    return true;
 }
 
 // 在页面加载完成后初始化游戏

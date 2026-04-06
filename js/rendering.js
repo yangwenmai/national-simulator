@@ -1,32 +1,100 @@
 // 渲染相关功能
 let canvas, ctx;
+let mapViewMode = 'fit'; // 'fit' = 适应窗口, 'scroll' = 原始大小可拖拽
 
 // 初始化画布
 function initCanvas() {
     canvas = document.getElementById('gameCanvas');
     ctx = canvas.getContext('2d');
     
-    // 确保画布与容器大小匹配
     resizeCanvas();
-    
-    // 添加窗口调整大小事件监听
     window.addEventListener('resize', resizeCanvas);
+    
+    // 拖拽滚动
+    const scrollContainer = document.getElementById('canvas-scroll-container');
+    if (scrollContainer) {
+        let isDragging = false, startX, startY, scrollLeft, scrollTop;
+        
+        scrollContainer.addEventListener('mousedown', (e) => {
+            if (mapViewMode !== 'scroll') return;
+            if (e.target !== canvas) return;
+            isDragging = true;
+            startX = e.pageX - scrollContainer.offsetLeft;
+            startY = e.pageY - scrollContainer.offsetTop;
+            scrollLeft = scrollContainer.scrollLeft;
+            scrollTop = scrollContainer.scrollTop;
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+            const moveX = e.pageX - scrollContainer.offsetLeft - startX;
+            const moveY = e.pageY - scrollContainer.offsetTop - startY;
+            scrollContainer.scrollLeft = scrollLeft - moveX;
+            scrollContainer.scrollTop = scrollTop - moveY;
+        });
+        
+        document.addEventListener('mouseup', () => { isDragging = false; });
+    }
 }
 
-// 调整画布大小
+function setMapViewMode(mode) {
+    mapViewMode = mode;
+    
+    const fitBtn = document.getElementById('view-fit-btn');
+    const scrollBtn = document.getElementById('view-scroll-btn');
+    const container = document.getElementById('canvas-scroll-container');
+    
+    if (fitBtn) fitBtn.className = mode === 'fit' ? 'active-view-btn' : '';
+    if (scrollBtn) scrollBtn.className = mode === 'scroll' ? 'active-view-btn' : '';
+    if (container) {
+        container.className = mode === 'fit' ? 'fit-mode' : '';
+        container.scrollLeft = 0;
+        container.scrollTop = 0;
+    }
+    
+    resizeCanvas();
+}
+
+// 调整画布大小（保证每格恰好为整数像素，消除点击偏移）
 function resizeCanvas() {
-    const container = document.getElementById('center-panel');
-    const containerWidth = container.clientWidth;
+    const scrollContainer = document.getElementById('canvas-scroll-container');
+    if (!scrollContainer) return;
     
-    // 保持宽高比
-    const ratio = GRID_HEIGHT / GRID_WIDTH;
-    const height = containerWidth * ratio;
+    // fit 模式下重置滚动位置，防止残留偏移影响坐标计算
+    if (mapViewMode === 'fit') {
+        scrollContainer.scrollLeft = 0;
+        scrollContainer.scrollTop = 0;
+    }
     
-    canvas.width = containerWidth;
-    canvas.height = height;
+    const containerWidth = scrollContainer.clientWidth;
+    let cellPx;
     
-    // 重新绘制
-    if (gameState) {
+    if (mapViewMode === 'fit') {
+        const maxH = window.innerHeight * 0.75;
+        cellPx = Math.floor(containerWidth / GRID_WIDTH);
+        if (cellPx * GRID_HEIGHT > maxH) {
+            cellPx = Math.floor(maxH / GRID_HEIGHT);
+        }
+        cellPx = Math.max(2, cellPx);
+    } else {
+        cellPx = Math.max(MIN_CELL_PX, Math.floor(containerWidth / GRID_WIDTH));
+    }
+    
+    const w = cellPx * GRID_WIDTH;
+    const h = cellPx * GRID_HEIGHT;
+    
+    canvas.width = w;
+    canvas.height = h;
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+    
+    const info = document.getElementById('map-size-info');
+    if (info) {
+        info.textContent = `${GRID_WIDTH}×${GRID_HEIGHT} · 格子${cellPx}px`;
+    }
+    
+    if (gameState && gameState.map && gameState.map.length > 0) {
         drawMap();
     }
 }
@@ -128,7 +196,11 @@ function drawMap() {
         
         // 绘制移动范围
         if (gameState.moveMode && gameState.selectedUnit) {
-            const moveRange = UNITS[gameState.selectedUnit.type].moveRange;
+            let moveRange = UNITS[gameState.selectedUnit.type].moveRange;
+            const moveOwner = gameState.players[gameState.selectedUnit.ownerId];
+            if (moveOwner && moveOwner.enchantments && moveOwner.enchantments.includes('swiftMarch')) {
+                moveRange += 1;
+            }
             const srcX = gameState.selectedUnit.x;
             const srcY = gameState.selectedUnit.y;
             
@@ -228,23 +300,54 @@ function drawMap() {
         });
     }
     
-    // 绘制网格线
+    // 绘制网格线（使用 0.5 像素偏移获得清晰的 1px 线条）
     ctx.strokeStyle = '#ddd';
     ctx.lineWidth = 1;
     
     for (let x = 0; x <= GRID_WIDTH; x++) {
+        const px = Math.floor(x * cellWidth) + 0.5;
         ctx.beginPath();
-        ctx.moveTo(x * cellWidth, 0);
-        ctx.lineTo(x * cellWidth, GRID_HEIGHT * cellHeight);
+        ctx.moveTo(px, 0);
+        ctx.lineTo(px, GRID_HEIGHT * cellHeight);
         ctx.stroke();
     }
     
     for (let y = 0; y <= GRID_HEIGHT; y++) {
+        const py = Math.floor(y * cellHeight) + 0.5;
         ctx.beginPath();
-        ctx.moveTo(0, y * cellHeight);
-        ctx.lineTo(GRID_WIDTH * cellWidth, y * cellHeight);
+        ctx.moveTo(0, py);
+        ctx.lineTo(GRID_WIDTH * cellWidth, py);
         ctx.stroke();
     }
+    
+    // 绘制坐标标签（行号和列号）
+    drawCoordinateLabels(cellWidth, cellHeight);
+}
+
+// 绘制坐标标签
+function drawCoordinateLabels(cellWidth, cellHeight) {
+    const fontSize = Math.max(7, Math.min(10, cellWidth * 0.3));
+    ctx.save();
+    ctx.font = `${fontSize}px Arial`;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+
+    // 列号（顶部，每隔几列显示）
+    const colStep = cellWidth < 18 ? 5 : (cellWidth < 28 ? 2 : 1);
+    for (let x = 0; x < GRID_WIDTH; x += colStep) {
+        ctx.fillText(x, x * cellWidth + cellWidth / 2, 1);
+    }
+
+    // 行号（左侧，每隔几行显示）
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    const rowStep = cellHeight < 18 ? 5 : (cellHeight < 28 ? 2 : 1);
+    for (let y = 0; y < GRID_HEIGHT; y += rowStep) {
+        ctx.fillText(y, 2, y * cellHeight + cellHeight / 2);
+    }
+
+    ctx.restore();
 }
 
 // 绘制正在建造中的建筑
@@ -283,13 +386,63 @@ function drawBuildingInProgress(buildingType, x, y, cellWidth, cellHeight, owner
             ctx.stroke();
             break;
             
-        case 'bank':
+            case 'bank':
             // 银行基本形状
             ctx.fillRect(x + margin, y + margin, buildingWidth, buildingHeight);
             // 添加列柱指示
             ctx.strokeRect(x + margin + 5, y + margin, 5, buildingHeight);
             ctx.strokeRect(x + margin + buildingWidth - 10, y + margin, 5, buildingHeight);
             break;
+
+            case 'missileFactory':
+            // 导弹工厂
+            ctx.fillRect(x + margin, y + margin, buildingWidth, buildingHeight);
+            ctx.fillRect(x + margin + 3, y + margin - 8, 5, 8);
+            break;
+        
+            case 'repairShop':
+                // 修理厂（扳手形状）
+                ctx.fillRect(x + margin, y + margin, buildingWidth, buildingHeight);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x + margin + 4, y + margin + buildingHeight - 4);
+                ctx.lineTo(x + margin + buildingWidth - 4, y + margin + 4);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(x + margin + buildingWidth - 4, y + margin + 4, 3, 0, Math.PI * 2);
+                ctx.stroke();
+                break;
+            
+            case 'pirateShip':
+                // 海盗船（船体 + 桅杆 + 骷髅旗）
+                ctx.fillStyle = '#5D4037';
+                const boatY = y + margin + buildingHeight * 0.4;
+                const boatH = buildingHeight * 0.5;
+                ctx.beginPath();
+                ctx.moveTo(x + margin, boatY + boatH);
+                ctx.lineTo(x + margin + buildingWidth * 0.1, boatY);
+                ctx.lineTo(x + margin + buildingWidth * 0.9, boatY);
+                ctx.lineTo(x + margin + buildingWidth, boatY + boatH);
+                ctx.closePath();
+                ctx.fill();
+                // 桅杆
+                ctx.strokeStyle = '#3E2723';
+                ctx.lineWidth = 2;
+                const mastX = x + margin + buildingWidth * 0.5;
+                ctx.beginPath();
+                ctx.moveTo(mastX, boatY);
+                ctx.lineTo(mastX, y + margin);
+                ctx.stroke();
+                // 骷髅旗
+                ctx.fillStyle = '#333';
+                ctx.fillRect(mastX, y + margin, buildingWidth * 0.35, buildingHeight * 0.25);
+                ctx.fillStyle = '#fff';
+                ctx.font = `${Math.max(6, buildingWidth * 0.25)}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('☠', mastX + buildingWidth * 0.17, y + margin + buildingHeight * 0.12);
+                break;
         
         default:
             // 默认简单矩形
@@ -562,6 +715,66 @@ function drawBuilding(tile, x, y, cellWidth, cellHeight) {
                 ctx.fill();
                 break;
                 
+            case 'missileFactory':
+                // 导弹工厂
+                ctx.fillRect(x + margin, y + margin, buildingWidth, buildingHeight);
+                ctx.fillStyle = tile.ownerId !== null ? gameState.players[tile.ownerId].color.dark : '#666';
+                ctx.fillRect(x + margin + buildingWidth * 0.15, y + margin - buildingHeight * 0.2, buildingWidth * 0.15, buildingHeight * 0.2);
+                ctx.fillRect(x + margin + buildingWidth * 0.65, y + margin - buildingHeight * 0.15, buildingWidth * 0.15, buildingHeight * 0.15);
+                ctx.fillStyle = '#e74c3c';
+                ctx.beginPath();
+                ctx.moveTo(x + margin + buildingWidth * 0.5, y + margin + buildingHeight * 0.15);
+                ctx.lineTo(x + margin + buildingWidth * 0.35, y + margin + buildingHeight * 0.7);
+                ctx.lineTo(x + margin + buildingWidth * 0.65, y + margin + buildingHeight * 0.7);
+                ctx.fill();
+                break;
+            
+            case 'repairShop':
+                // 修理厂
+                ctx.fillRect(x + margin, y + margin, buildingWidth, buildingHeight);
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(x + margin + buildingWidth * 0.2, y + margin + buildingHeight * 0.8);
+                ctx.lineTo(x + margin + buildingWidth * 0.8, y + margin + buildingHeight * 0.2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(x + margin + buildingWidth * 0.8, y + margin + buildingHeight * 0.2, buildingWidth * 0.12, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.fillStyle = '#f39c12';
+                ctx.font = `${Math.max(8, buildingWidth * 0.35)}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.fillText('🔧', x + margin + buildingWidth / 2, y + margin + buildingHeight * 0.55);
+                break;
+            
+            case 'pirateShip': {
+                const shipBoatY = y + margin + buildingHeight * 0.4;
+                const shipBoatH = buildingHeight * 0.5;
+                ctx.fillStyle = '#5D4037';
+                ctx.beginPath();
+                ctx.moveTo(x + margin, shipBoatY + shipBoatH);
+                ctx.lineTo(x + margin + buildingWidth * 0.1, shipBoatY);
+                ctx.lineTo(x + margin + buildingWidth * 0.9, shipBoatY);
+                ctx.lineTo(x + margin + buildingWidth, shipBoatY + shipBoatH);
+                ctx.closePath();
+                ctx.fill();
+                const shipMastX = x + margin + buildingWidth * 0.5;
+                ctx.strokeStyle = '#3E2723';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(shipMastX, shipBoatY);
+                ctx.lineTo(shipMastX, y + margin);
+                ctx.stroke();
+                ctx.fillStyle = '#333';
+                ctx.fillRect(shipMastX, y + margin, buildingWidth * 0.35, buildingHeight * 0.25);
+                ctx.fillStyle = '#fff';
+                ctx.font = `${Math.max(6, buildingWidth * 0.25)}px Arial`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('☠', shipMastX + buildingWidth * 0.17, y + margin + buildingHeight * 0.12);
+                break;
+            }
+                
             default:
                 // 默认建筑样式
                 ctx.fillRect(x + margin, y + margin, buildingWidth, buildingHeight);
@@ -580,7 +793,7 @@ function drawUnit(tile, x, y, cellWidth, cellHeight) {
     const unit = tile.unit;
     
     // 设置颜色
-    if (unit.ownerId !== null && unit.ownerId !== undefined) {
+    if (unit.ownerId !== null && unit.ownerId !== undefined && unit.ownerId >= 0 && gameState.players[unit.ownerId]) {
         ctx.fillStyle = gameState.players[unit.ownerId].color.main;
     } else {
         ctx.fillStyle = '#aaa';
@@ -639,6 +852,24 @@ function drawUnit(tile, x, y, cellWidth, cellHeight) {
             ctx.stroke();
             break;
             
+        case 'archer':
+            // 绘制弓箭手（三角形+弓弦线）
+            ctx.beginPath();
+            ctx.moveTo(x + cellWidth / 2, y + margin);
+            ctx.lineTo(x + margin, y + cellHeight - margin);
+            ctx.lineTo(x + cellWidth - margin, y + cellHeight - margin);
+            ctx.closePath();
+            ctx.fill();
+            // 弓弦
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.moveTo(x + cellWidth * 0.35, y + cellHeight * 0.25);
+            ctx.lineTo(x + cellWidth * 0.5, y + cellHeight * 0.55);
+            ctx.lineTo(x + cellWidth * 0.65, y + cellHeight * 0.25);
+            ctx.stroke();
+            break;
+            
         case 'artillery':
             // 绘制火炮（圆形带长线炮管）
             ctx.beginPath();
@@ -680,6 +911,62 @@ function drawUnit(tile, x, y, cellWidth, cellHeight) {
             ctx.textBaseline = 'middle';
             ctx.fillText('📚', x + cellWidth / 2, y + cellHeight / 2);
             break;
+        
+        case 'pirate':
+            // 海盗（红色骷髅圆形）
+            ctx.fillStyle = '#8B0000';
+            ctx.beginPath();
+            ctx.arc(x + cellWidth / 2, y + cellHeight / 2, unitSize / 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.fillStyle = '#fff';
+            ctx.font = `${Math.max(8, unitSize / 2.2)}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('☠', x + cellWidth / 2, y + cellHeight / 2);
+            break;
+            
+        case 'bloodBerserker': {
+            const bRadius = unitSize / 2.2;
+            // 外圈脉冲光晕（成长越多越亮）
+            const kills = (unit.totalKills || 0) + (unit.totalDestroys || 0);
+            const glowAlpha = Math.min(0.6, 0.15 + kills * 0.05);
+            ctx.fillStyle = `rgba(200, 0, 0, ${glowAlpha})`;
+            ctx.beginPath();
+            ctx.arc(x + cellWidth / 2, y + cellHeight / 2, bRadius + 3, 0, Math.PI * 2);
+            ctx.fill();
+            // 主体暗红色
+            ctx.fillStyle = '#8B0000';
+            ctx.beginPath();
+            ctx.arc(x + cellWidth / 2, y + cellHeight / 2, bRadius, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#4A0000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            // 中心交叉斧头标记
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 2;
+            const cx2 = x + cellWidth / 2;
+            const cy2 = y + cellHeight / 2;
+            const half = bRadius * 0.5;
+            ctx.beginPath();
+            ctx.moveTo(cx2 - half, cy2 - half);
+            ctx.lineTo(cx2 + half, cy2 + half);
+            ctx.moveTo(cx2 + half, cy2 - half);
+            ctx.lineTo(cx2 - half, cy2 + half);
+            ctx.stroke();
+            // 成长计数标记
+            if (kills > 0) {
+                ctx.fillStyle = '#FFD700';
+                ctx.font = `bold ${Math.max(7, unitSize * 0.22)}px Arial`;
+                ctx.textAlign = 'right';
+                ctx.textBaseline = 'top';
+                ctx.fillText(`×${kills}`, x + cellWidth - 2, y + 2);
+            }
+            break;
+        }
             
         default:
             // 默认单位形状（圆形）
@@ -781,7 +1068,7 @@ function drawHealthBar(x, y, cellWidth, cellHeight, entity) {
 
 // 绘制单位健康值条
 function drawUnitHealthBar(x, y, cellWidth, cellHeight, unit) {
-    const maxHealth = UNITS[unit.type].health;
+    const maxHealth = unit.maxHealth || UNITS[unit.type].health;
     // 确保健康值不为负数或NaN
     const currentHealth = Math.max(0, isNaN(unit.health) ? 0 : unit.health);
     const healthPercentage = Math.max(0, Math.min(1, currentHealth / maxHealth));

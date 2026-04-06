@@ -21,56 +21,77 @@ function initializeMap() {
     return map;
 }
 
-// 生成随机地形
+// 生成随机地形（数量按地图大小比例缩放）
 function generateRandomTerrain(map) {
-    // 添加一些森林
-    for (let i = 0; i < 25; i++) {
-        const x = Math.floor(Math.random() * GRID_WIDTH);
-        const y = Math.floor(Math.random() * GRID_HEIGHT);
-        const tileIndex = y * GRID_WIDTH + x;
-        
-        // 只在空白区域添加
-        if (map[tileIndex].ownerId === null && map[tileIndex].terrain === 'plain') {
-            map[tileIndex].terrain = 'forest';
-        }
-    }
+    const totalTiles = GRID_WIDTH * GRID_HEIGHT;
+    const scale = totalTiles / 300; // 300 = 旧的 20×15 基准
     
-    // 添加一些山脉
-    for (let i = 0; i < 15; i++) {
-        const x = Math.floor(Math.random() * GRID_WIDTH);
-        const y = Math.floor(Math.random() * GRID_HEIGHT);
-        const tileIndex = y * GRID_WIDTH + x;
-        
-        // 只在空白区域添加
-        if (map[tileIndex].ownerId === null && map[tileIndex].terrain === 'plain') {
-            map[tileIndex].terrain = 'mountain';
-        }
-    }
+    const forestCount = Math.round(25 * scale);
+    const mountainCount = Math.round(15 * scale);
+    const waterCount = Math.round(10 * scale);
     
-    // 添加一些水域
-    for (let i = 0; i < 10; i++) {
-        const x = Math.floor(Math.random() * GRID_WIDTH);
-        const y = Math.floor(Math.random() * GRID_HEIGHT);
-        const tileIndex = y * GRID_WIDTH + x;
+    // 森林：随机散布 + 簇状生成
+    generateTerrainClusters(map, 'forest', forestCount, 0.4);
+    
+    // 山脉：簇状生成
+    generateTerrainClusters(map, 'mountain', mountainCount, 0.5);
+    
+    // 水域：簇状生成（形成河流/湖泊感）
+    generateTerrainClusters(map, 'water', waterCount, 0.6);
+}
+
+function generateTerrainClusters(map, terrainType, count, clusterChance) {
+    let placed = 0;
+    let attempts = 0;
+    const maxAttempts = count * 5;
+    
+    while (placed < count && attempts < maxAttempts) {
+        attempts++;
+        let x, y;
         
-        // 只在空白区域添加
-        if (map[tileIndex].ownerId === null && map[tileIndex].terrain === 'plain') {
-            map[tileIndex].terrain = 'water';
+        // 有一定概率在已有同类地形旁边生成（形成簇）
+        if (placed > 0 && Math.random() < clusterChance) {
+            const existing = [];
+            for (let i = 0; i < map.length; i++) {
+                if (map[i].terrain === terrainType) existing.push(map[i]);
+            }
+            if (existing.length > 0) {
+                const base = existing[Math.floor(Math.random() * existing.length)];
+                const dx = Math.floor(Math.random() * 3) - 1;
+                const dy = Math.floor(Math.random() * 3) - 1;
+                x = base.x + dx;
+                y = base.y + dy;
+            } else {
+                x = Math.floor(Math.random() * GRID_WIDTH);
+                y = Math.floor(Math.random() * GRID_HEIGHT);
+            }
+        } else {
+            x = Math.floor(Math.random() * GRID_WIDTH);
+            y = Math.floor(Math.random() * GRID_HEIGHT);
+        }
+        
+        if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) continue;
+        
+        const idx = y * GRID_WIDTH + x;
+        if (map[idx].ownerId === null && map[idx].terrain === 'plain') {
+            map[idx].terrain = terrainType;
+            placed++;
         }
     }
 }
 
 // 生成玩家起始区域
 function generatePlayerStartingAreas(map, playerCount) {
-    console.log("生成玩家起始区域，玩家数量：", playerCount);
+    // 边距按地图大小动态计算，保证首都不贴边
+    const marginX = Math.max(3, Math.floor(GRID_WIDTH * 0.1));
+    const marginY = Math.max(3, Math.floor(GRID_HEIGHT * 0.1));
     
-    // 基于玩家数量确定起始位置
     const startingPositions = [
-        { x: 2, y: 2 },                                    // 玩家1: 左上
-        { x: GRID_WIDTH - 3, y: GRID_HEIGHT - 3 },         // 玩家2: 右下
-        { x: GRID_WIDTH - 3, y: 2 },                       // 玩家3: 右上
-        { x: 2, y: GRID_HEIGHT - 3 },                      // 玩家4: 左下
-        { x: Math.floor(GRID_WIDTH / 2), y: Math.floor(GRID_HEIGHT / 2) }  // 玩家5: 中心
+        { x: marginX, y: marginY },                                          // 左上
+        { x: GRID_WIDTH - 1 - marginX, y: GRID_HEIGHT - 1 - marginY },     // 右下
+        { x: GRID_WIDTH - 1 - marginX, y: marginY },                       // 右上
+        { x: marginX, y: GRID_HEIGHT - 1 - marginY },                      // 左下
+        { x: Math.floor(GRID_WIDTH / 2), y: Math.floor(GRID_HEIGHT / 2) }  // 中心
     ].slice(0, playerCount);
     
     console.log("起始位置数量：", startingPositions.length);

@@ -23,7 +23,13 @@ function moveUnit(fromX, fromY, toX, toY) {
     
     const unit = fromTile.unit;
     const unitType = unit.type;
-    const moveRange = UNITS[unitType].moveRange;
+    let moveRange = UNITS[unitType].moveRange;
+    
+    // 词条：急行军 - 移动范围+1
+    const unitOwnerForMove = gameState.players[unit.ownerId];
+    if (unitOwnerForMove.enchantments && unitOwnerForMove.enchantments.includes('swiftMarch')) {
+        moveRange += 1;
+    }
     
     // 计算曼哈顿距离
     const distance = Math.abs(fromX - toX) + Math.abs(fromY - toY);
@@ -169,24 +175,42 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
         
         // 检查单位是否被摧毁
         if (defender.health <= 0) {
-            // 移除被摧毁的单位
             targetTile.unit = null;
             
-            // 更新游戏日志
             const attackerPlayer = gameState.players[attackerOwnerId];
-            const defenderPlayer = gameState.players[defender.ownerId];
+            const defenderName = UNITS[defender.type] ? UNITS[defender.type].name : '未知单位';
+            const dmg = isNaN(damage) ? 0 : damage;
             
-            addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}摧毁了${defenderPlayer.name}的${UNITS[defender.type].name}，造成了${isNaN(damage) ? 0 : damage}点伤害。`);
+            // 记录击杀（用于嗜血狂魔解锁条件）
+            recordPlayerKill(attackerOwnerId);
             
-            showNotification(`敌方${UNITS[defender.type].name}被摧毁！`, 'success');
+            // 嗜血狂魔击杀成长
+            applyBerserkerKillGrowth(attacker);
+            
+            // 中立海盗击杀奖励
+            if (defender.ownerId === -1 && UNITS[defender.type] && UNITS[defender.type].killReward) {
+                const reward = UNITS[defender.type].killReward;
+                attackerPlayer.gold += reward;
+                addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}击杀了${defenderName}，获得${reward}金币奖励！`);
+                showNotification(`击杀${defenderName}！获得${reward}金币！`, 'success');
+            } else {
+                const defenderPlayer = gameState.players[defender.ownerId];
+                const defenderPlayerName = defenderPlayer ? defenderPlayer.name : '中立';
+                addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}摧毁了${defenderPlayerName}的${defenderName}，造成了${dmg}点伤害。`);
+                showNotification(`敌方${defenderName}被摧毁！`, 'success');
+            }
         } else {
-            // 更新游戏日志
             const attackerPlayer = gameState.players[attackerOwnerId];
-            const defenderPlayer = gameState.players[defender.ownerId];
+            const defenderName = UNITS[defender.type] ? UNITS[defender.type].name : '未知单位';
+            const dmg = isNaN(damage) ? 0 : damage;
             
-            addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}攻击了${defenderPlayer.name}的${UNITS[defender.type].name}，造成了${isNaN(damage) ? 0 : damage}点伤害（剩余生命：${defender.health}）。`);
-            
-            showNotification(`对敌方${UNITS[defender.type].name}造成${isNaN(damage) ? 0 : damage}点伤害！`, 'info');
+            if (defender.ownerId === -1) {
+                addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}攻击了${defenderName}，造成了${dmg}点伤害（剩余生命：${defender.health}）。`);
+            } else {
+                const defenderPlayer = gameState.players[defender.ownerId];
+                addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}攻击了${defenderPlayer.name}的${defenderName}，造成了${dmg}点伤害（剩余生命：${defender.health}）。`);
+            }
+            showNotification(`对${defenderName}造成${dmg}点伤害！`, 'info');
         }
     } else if (targetTile.building) {
         // 对敌方建筑造成伤害
@@ -260,6 +284,9 @@ function attackTarget(attackerX, attackerY, targetX, targetY) {
                 actualBuildingTile.building = null;
             }
             
+            // 嗜血狂魔摧毁建筑成长
+            applyBerserkerDestroyGrowth(attacker);
+            
             addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}摧毁了${defenderPlayer.name}的${buildingName}，造成了${isNaN(damage) ? 0 : damage}点伤害。`);
             showNotification(`敌方${buildingName}被摧毁！`, 'success');
         } else {
@@ -330,9 +357,53 @@ function calculateDamage(attacker, defender) {
     
     // 词条：防御强化 +20%（对防御方生效）
     let adjustedDefense = defensePower;
-    const defenderPlayer = gameState.players[defender.ownerId];
-    if (defenderPlayer.enchantments && defenderPlayer.enchantments.includes('defenseBoost')) {
+    const defenderPlayer = defender.ownerId >= 0 ? gameState.players[defender.ownerId] : null;
+    if (defenderPlayer && defenderPlayer.enchantments && defenderPlayer.enchantments.includes('defenseBoost')) {
         adjustedDefense = Math.floor(adjustedDefense * 1.2);
+    }
+    
+    // 弓箭手：造成目标25%当前血量伤害（忽略攻防计算）
+    if (attackerType === 'archer' && UNITS[attackerType].percentageDamage) {
+        const currentDefenderHP = isNaN(defender.health) ? UNITS[defender.type].health : defender.health;
+        let percentDamage = Math.floor(currentDefenderHP * 0.25);
+        
+        // 词条：致命一击 20%概率双倍
+        if (attackerPlayer.enchantments && attackerPlayer.enchantments.includes('criticalHit') && Math.random() < 0.2) {
+            percentDamage *= 2;
+            addLogEntry(`${attackerPlayer.name}的弓箭手触发了致命一击！伤害翻倍！`);
+            showNotification('致命一击触发！伤害翻倍！', 'success');
+        }
+        
+        // 弓箭手自伤：50%概率对自身造成50%当前血量伤害
+        if (Math.random() < 0.5) {
+            const selfDamage = Math.floor(attacker.health * 0.5);
+            attacker.health -= selfDamage;
+            addLogEntry(`${attackerPlayer.name}的弓箭手受到了${selfDamage}点反噬伤害！(剩余${attacker.health})`);
+            showNotification(`弓箭手反噬！自身受到${selfDamage}伤害`, 'warning');
+            
+            if (attacker.health <= 0) {
+                const atkTileIdx = attacker.y * GRID_WIDTH + attacker.x;
+                gameState.map[atkTileIdx].unit = null;
+                addLogEntry(`${attackerPlayer.name}的弓箭手因反噬而阵亡！`);
+            }
+        }
+        
+        return Math.max(5, percentDamage);
+    }
+    
+    // 词条：致命一击 20%概率双倍伤害
+    if (attackerPlayer.enchantments && attackerPlayer.enchantments.includes('criticalHit') && Math.random() < 0.2) {
+        attackPower *= 2;
+        addLogEntry(`${attackerPlayer.name}的${UNITS[attackerType].name}触发了致命一击！`);
+        showNotification('致命一击触发！', 'success');
+    }
+    
+    // 词条：背水一战 - 生命低于30%攻击力翻倍
+    if (attackerPlayer.enchantments && attackerPlayer.enchantments.includes('lastStand')) {
+        const maxHP = attacker.maxHealth || UNITS[attackerType].health;
+        if (attacker.health < maxHP * 0.3) {
+            attackPower *= 2;
+        }
     }
     
     // 计算基础伤害（攻击力与防御力的差值，但最小为5）
@@ -347,8 +418,13 @@ function calculateDamage(attacker, defender) {
     // 应用战术指导效果
     damage = applyTacticalGuidanceEffect(attacker, damage);
     
+    // 词条：钢铁意志 - 防御方受伤减少15%
+    if (defenderPlayer && defenderPlayer.enchantments && defenderPlayer.enchantments.includes('ironWill')) {
+        damage = Math.floor(damage * 0.85);
+    }
+    
     // 确保返回一个有效的数值
-    return isNaN(damage) ? 5 : Math.round(damage);
+    return isNaN(damage) ? 5 : Math.max(5, Math.round(damage));
 }
 
 // 计算教官的动态攻击力
@@ -434,6 +510,30 @@ function calculateBuildingDamage(attacker, building) {
             building.armorBroken = true;
             addLogEntry(`${attackerPlayer.name}的魔法兵对建筑使用了破甲！`);
         }
+    }
+    
+    // 弓箭手对建筑：同样造成25%当前血量伤害
+    if (attackerType === 'archer' && UNITS[attackerType].percentageDamage) {
+        const currentBuildingHP = building.health || 0;
+        let percentDamage = Math.floor(currentBuildingHP * 0.25);
+        
+        const atkPlayer = gameState.players[attacker.ownerId];
+        
+        // 弓箭手自伤
+        if (Math.random() < 0.5) {
+            const selfDamage = Math.floor(attacker.health * 0.5);
+            attacker.health -= selfDamage;
+            addLogEntry(`${atkPlayer.name}的弓箭手受到了${selfDamage}点反噬伤害！`);
+            showNotification(`弓箭手反噬！自身受到${selfDamage}伤害`, 'warning');
+            
+            if (attacker.health <= 0) {
+                const atkTileIdx = attacker.y * GRID_WIDTH + attacker.x;
+                gameState.map[atkTileIdx].unit = null;
+                addLogEntry(`${atkPlayer.name}的弓箭手因反噬而阵亡！`);
+            }
+        }
+        
+        return Math.max(5, percentDamage);
     }
     
     // 计算随机因素 (0.9到1.1之间的随机值)
@@ -730,6 +830,14 @@ function recruitUnit(x, y, unitType) {
         }
     }
     
+    // 嗜血狂魔解锁条件检查
+    if (unitInfo.unlockCondition) {
+        if (!isBloodBerserkerUnlocked(currentPlayer)) {
+            showNotification('未解锁！需要在10回合内击杀5个军事单位。', 'error');
+            return false;
+        }
+    }
+    
     // 扣除金币
     currentPlayer.gold -= unitCost;
     
@@ -740,7 +848,7 @@ function recruitUnit(x, y, unitType) {
         health: unitInfo.health,
         x: x,
         y: y,
-        hasActed: true,  // 刚招募的单位本回合无法行动
+        hasActed: true,
         id: generateUnitId()
     };
     
@@ -749,6 +857,15 @@ function recruitUnit(x, y, unitType) {
         tile.unit.attack = 0;
     } else {
         tile.unit.attack = unitInfo.attack;
+    }
+    
+    // 嗜血狂魔初始化成长属性
+    if (unitType === 'bloodBerserker') {
+        tile.unit.maxHealth = unitInfo.health;
+        tile.unit.bonusAttack = 0;
+        tile.unit.bonusMaxHealth = 0;
+        tile.unit.totalKills = 0;
+        tile.unit.totalDestroys = 0;
     }
     
     // 为油车单位添加标记当前回合招募
@@ -769,20 +886,37 @@ function recruitUnit(x, y, unitType) {
 }
 
 // 修理建筑
+function playerHasRepairShop(player) {
+    return player.buildings.some(b => b.type === 'repairShop');
+}
+
+function getRepairCost(buildingType, healthPercentLost) {
+    let cost;
+    if (buildingType === 'capital') {
+        cost = Math.ceil(500 * healthPercentLost);
+    } else {
+        // 修理费 = 建筑造价 × 50% × 损失血量比例，最低50金
+        cost = Math.ceil(BUILDINGS[buildingType].cost * 0.5 * healthPercentLost);
+    }
+    return Math.max(50, cost);
+}
+
 function repairBuilding(x, y) {
     const tileIndex = y * GRID_WIDTH + x;
     const tile = gameState.map[tileIndex];
     const player = gameState.players[gameState.currentPlayerIndex];
     
-    // 检查是否是玩家的建筑
     if (tile.ownerId !== player.id || !tile.building) {
         showNotification('只能修理自己的建筑！', 'error');
         return false;
     }
     
-    const targetBuilding = tile.building;
+    if (!playerHasRepairShop(player)) {
+        showNotification('需要先建造修理厂才能修理建筑！', 'error');
+        return false;
+    }
     
-    // 检查建筑是否已满血
+    const targetBuilding = tile.building;
     const buildingType = targetBuilding.type;
     const maxHealth = buildingType === 'capital' ? BUILDINGS.capital.maxHealth : BUILDINGS[buildingType].maxHealth;
     
@@ -791,39 +925,24 @@ function repairBuilding(x, y) {
         return false;
     }
     
-    // 计算修理费用 - 根据损失的健康值比例计算
     const healthPercentLost = 1 - (targetBuilding.health / maxHealth);
-    // 为首都设置特殊的修理费用
-    let repairCost;
-    if (buildingType === "capital") {
-        // 首都修理费用为损失健康值百分比 * 200
-        repairCost = Math.ceil(200 * healthPercentLost);
-    } else {
-        // 其他建筑修理费用为建筑成本的20%乘以损失健康值百分比
-        repairCost = Math.ceil(BUILDINGS[buildingType].cost * 0.2 * healthPercentLost);
-    }
+    const repairCost = getRepairCost(buildingType, healthPercentLost);
     
     if (player.gold < repairCost) {
         showNotification(`金币不足！修理需要${repairCost}金币。`, 'error');
         return false;
     }
     
-    // 扣除金币
     player.gold -= repairCost;
     
-    // 修复建筑
     const oldHealth = targetBuilding.health;
     targetBuilding.health = maxHealth;
     
-    // 更新建筑损伤状态对收益的影响
     updateBuildingDamageEffect(tile, player);
     
-    // 添加日志
     const buildingName = buildingType === 'capital' ? '首都' : BUILDINGS[buildingType].name;
     addLogEntry(`${player.name}花费${repairCost}金币修复了${buildingName}，健康值从${oldHealth}恢复到${maxHealth}。`);
-    
-    // 显示通知
-    showNotification(`${buildingName}已修复！`, 'success');
+    showNotification(`${buildingName}已修复！花费${repairCost}金币`, 'success');
     
     return true;
 }
@@ -1006,4 +1125,53 @@ function findNearbyEnemyBuilding(attacker, defender) {
     }
     
     return null;
-} 
+}
+
+// 检查嗜血狂魔是否已解锁（10回合内击杀5个军事单位）
+function isBloodBerserkerUnlocked(player) {
+    if (!player.killHistory || player.killHistory.length === 0) return false;
+    const currentTurn = gameState.turn;
+    const recentKills = player.killHistory.filter(t => currentTurn - t < 10);
+    return recentKills.length >= 5;
+}
+
+// 记录玩家击杀
+function recordPlayerKill(playerId) {
+    const player = gameState.players[playerId];
+    if (!player.killHistory) player.killHistory = [];
+    player.killHistory.push(gameState.turn);
+}
+
+// 嗜血狂魔成长：击杀军事单位
+function applyBerserkerKillGrowth(attacker) {
+    if (attacker.type !== 'bloodBerserker') return;
+    const growth = UNITS.bloodBerserker.growthOnKillUnit;
+    attacker.attack += growth.attack;
+    attacker.bonusAttack = (attacker.bonusAttack || 0) + growth.attack;
+    const oldMax = attacker.maxHealth || UNITS.bloodBerserker.health;
+    attacker.maxHealth = oldMax + growth.maxHealth;
+    attacker.health += growth.maxHealth;
+    attacker.bonusMaxHealth = (attacker.bonusMaxHealth || 0) + growth.maxHealth;
+    attacker.totalKills = (attacker.totalKills || 0) + 1;
+    
+    const attackerPlayer = gameState.players[attacker.ownerId];
+    addLogEntry(`${attackerPlayer.name}的嗜血狂魔成长！攻击+${growth.attack}，最大生命+${growth.maxHealth}（当前：${attacker.attack}攻/${attacker.maxHealth}血）`);
+    showNotification(`嗜血狂魔成长！攻击+${growth.attack} 生命+${growth.maxHealth}`, 'success');
+}
+
+// 嗜血狂魔成长：摧毁建筑
+function applyBerserkerDestroyGrowth(attacker) {
+    if (attacker.type !== 'bloodBerserker') return;
+    const growth = UNITS.bloodBerserker.growthOnDestroyBuilding;
+    attacker.attack += growth.attack;
+    attacker.bonusAttack = (attacker.bonusAttack || 0) + growth.attack;
+    const oldMax = attacker.maxHealth || UNITS.bloodBerserker.health;
+    attacker.maxHealth = oldMax + growth.maxHealth;
+    attacker.health += growth.maxHealth;
+    attacker.bonusMaxHealth = (attacker.bonusMaxHealth || 0) + growth.maxHealth;
+    attacker.totalDestroys = (attacker.totalDestroys || 0) + 1;
+    
+    const attackerPlayer = gameState.players[attacker.ownerId];
+    addLogEntry(`${attackerPlayer.name}的嗜血狂魔摧毁建筑成长！攻击+${growth.attack}，最大生命+${growth.maxHealth}（当前：${attacker.attack}攻/${attacker.maxHealth}血）`);
+    showNotification(`嗜血狂魔成长！攻击+${growth.attack} 生命+${growth.maxHealth}`, 'success');
+}

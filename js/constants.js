@@ -1,7 +1,36 @@
 // 游戏常量定义
-const GRID_WIDTH = 20;           // 地图宽度（格子数）
-const GRID_HEIGHT = 15;          // 地图高度（格子数）
-const GRID_SIZE = 40;            // 格子大小（像素）
+let GRID_WIDTH = 36;             // 地图宽度（格子数），动态设置
+let GRID_HEIGHT = 26;            // 地图高度（格子数），动态设置
+const GRID_SIZE = 40;            // 格子大小（像素）- 仅参考
+
+// 地图尺寸预设
+const MAP_SIZES = {
+    classic: { width: 20, height: 15, name: '经典', desc: '20×15 (300格)', recommend: '2人' },
+    small:   { width: 28, height: 20, name: '小', desc: '28×20 (560格)', recommend: '2-3人' },
+    medium:  { width: 36, height: 26, name: '中', desc: '36×26 (936格)', recommend: '3人' },
+    large:   { width: 44, height: 32, name: '大', desc: '44×32 (1408格)', recommend: '4人' },
+    huge:    { width: 52, height: 36, name: '超大', desc: '52×36 (1872格)', recommend: '5人' }
+};
+
+// 每个格子的最小像素尺寸（保证可操作性）
+const MIN_CELL_PX = 28;
+
+// 根据玩家数量推荐默认地图尺寸
+function getRecommendedMapSize(playerCount) {
+    if (playerCount <= 2) return 'small';
+    if (playerCount === 3) return 'medium';
+    if (playerCount === 4) return 'large';
+    return 'huge';
+}
+
+// 设置地图尺寸
+function setMapSize(sizeKey) {
+    const size = MAP_SIZES[sizeKey];
+    if (size) {
+        GRID_WIDTH = size.width;
+        GRID_HEIGHT = size.height;
+    }
+}
 
 // 最大玩家数量
 const MAX_PLAYERS = 5;
@@ -97,5 +126,47 @@ const ENCHANTMENTS = {
         desc: '所有己方建筑额外+15%伤害减免',
         cost: 700,
         icon: '🔮'
+    },
+    swiftMarch: {
+        id: 'swiftMarch',
+        name: '急行军',
+        desc: '所有己方单位移动范围+1',
+        cost: 500,
+        icon: '🏃'
+    },
+    criticalHit: {
+        id: 'criticalHit',
+        name: '致命一击',
+        desc: '攻击时20%概率造成双倍伤害',
+        cost: 700,
+        icon: '💥'
+    },
+    ironWill: {
+        id: 'ironWill',
+        name: '钢铁意志',
+        desc: '所有己方单位受到伤害减少15%',
+        cost: 600,
+        icon: '🏰'
+    },
+    goldRush: {
+        id: 'goldRush',
+        name: '淘金热',
+        desc: '每回合额外获得80金币固定收入',
+        cost: 800,
+        icon: '⛏️'
+    },
+    missileExpert: {
+        id: 'missileExpert',
+        name: '导弹专家',
+        desc: '导弹伤害+50%，AoE半径+1格',
+        cost: 900,
+        icon: '🚀'
+    },
+    lastStand: {
+        id: 'lastStand',
+        name: '背水一战',
+        desc: '单位生命值低于30%时攻击力翻倍',
+        cost: 600,
+        icon: '🔥'
     }
 }; 

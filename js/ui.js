@@ -50,7 +50,8 @@ function initUI() {
     // 设置函数引用，确保在页面加载后可用
     calculateInstructorAttackRef = window.calculateInstructorAttack || calculateInstructorAttackLocal;
     
-    // 添加画布点击事件
+    // 添加画布点击事件（含拖拽检测）
+    canvas.addEventListener('mousedown', trackMouseDown);
     canvas.addEventListener('click', handleCanvasClick);
     
     // 添加画布悬浮提示
@@ -102,6 +103,7 @@ function updateGameStateDisplay() {
         const turnTimeStr = `${turnMins.toString().padStart(2, '0')}:${turnSecs.toString().padStart(2, '0')}`;
         
         // 更新回合显示，包含玩家信息和时间信息，并使当前玩家更加突出
+        const aiTag = currentPlayer.isAI ? ' <span style="font-size:11px;background:#e67e22;color:#fff;padding:1px 6px;border-radius:8px;margin-left:4px;">🤖 电脑</span>' : '';
         turnDisplay.innerHTML = `
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                 <span style="font-weight: bold;">回合：${gameState.turn}</span>
@@ -110,7 +112,7 @@ function updateGameStateDisplay() {
             <div style="display: flex; align-items: center; justify-content: space-between; background-color: ${currentPlayer.color.light}; padding: 5px; border-radius: 4px; border: 2px solid ${currentPlayer.color.main};">
                 <div style="display: flex; align-items: center;">
                     <span style="display: inline-block; width: 12px; height: 12px; border-radius: 50%; background-color: ${currentPlayer.color.main}; margin-right: 5px;"></span>
-                    <span style="font-weight: bold; color: ${currentPlayer.color.dark}; font-size: 16px;">${currentPlayer.name}的回合</span>
+                    <span style="font-weight: bold; color: ${currentPlayer.color.dark}; font-size: 16px;">${currentPlayer.name}的回合${aiTag}</span>
                 </div>
                 <div style="width: 80px; text-align: right;">用时：<span id="current-turn-time">${turnTimeStr}</span></div>
             </div>
@@ -300,6 +302,8 @@ function updateSelectionInfo() {
     const infoContainer = document.getElementById('selection-info');
     infoContainer.innerHTML = '';
     
+    const currentPlayer = gameState.players[gameState.currentPlayerIndex];
+    
     // 如果有选中的格子
     if (gameState.selectedTile) {
         const tile = gameState.selectedTile;
@@ -382,27 +386,90 @@ function updateSelectionInfo() {
                 buildingInfo.appendChild(combatInfo);
             }
             
-            // 如果是当前玩家的建筑且受损，显示修理按钮
+            // 如果是当前玩家的建筑且受损，显示修理按钮（需要修理厂）
             if (mapTile.ownerId === gameState.currentPlayerIndex && healthPercent < 100) {
-                const repairButton = document.createElement('button');
-                
-                // 计算修理费用
+                const hasShop = playerHasRepairShop(currentPlayer);
                 const healthPercentLost = 1 - (building.health / maxHealth);
-                let repairCost;
-                if (building.type === "capital") {
-                    repairCost = Math.ceil(200 * healthPercentLost);
+                const repairCost = getRepairCost(building.type, healthPercentLost);
+                
+                if (hasShop) {
+                    const repairButton = document.createElement('button');
+                    repairButton.textContent = `修理 (¥${repairCost})`;
+                    repairButton.disabled = currentPlayer.gold < repairCost;
+                    
+                    repairButton.addEventListener('click', () => {
+                        repairBuilding(tile.x, tile.y);
+                        updateSelectionInfo();
+                    });
+                    
+                    buildingInfo.appendChild(repairButton);
                 } else {
-                    repairCost = Math.ceil(BUILDINGS[building.type].cost * 0.2 * healthPercentLost);
+                    const hint = document.createElement('p');
+                    hint.textContent = `⚠️ 需要修理厂才能修理（费用 ¥${repairCost}）`;
+                    hint.style.color = '#e67e22';
+                    hint.style.fontSize = '12px';
+                    hint.style.margin = '4px 0';
+                    buildingInfo.appendChild(hint);
+                }
+            }
+            
+            // 如果是导弹工厂，显示导弹工厂专属面板
+            if (building.type === 'missileFactory' && mapTile.ownerId === gameState.currentPlayerIndex) {
+                const missilePanel = document.createElement('div');
+                missilePanel.style.marginTop = '8px';
+                missilePanel.style.padding = '8px';
+                missilePanel.style.backgroundColor = '#f5f5f5';
+                missilePanel.style.borderRadius = '4px';
+                missilePanel.style.border = '1px solid #ddd';
+                
+                const stored = building.storedMissiles || 0;
+                const maxM = BUILDINGS.missileFactory.maxMissiles;
+                
+                const missileInfo = document.createElement('p');
+                missileInfo.innerHTML = `<strong>导弹库存:</strong> ${stored}/${maxM}`;
+                missilePanel.appendChild(missileInfo);
+                
+                if (building.missileBuilding) {
+                    const prodInfo = document.createElement('p');
+                    prodInfo.textContent = `建造中... 剩余${building.missileBuildTurns}回合`;
+                    prodInfo.style.color = '#f39c12';
+                    prodInfo.style.fontSize = '12px';
+                    missilePanel.appendChild(prodInfo);
                 }
                 
-                repairButton.textContent = `修理 (¥${repairCost})`;
+                // 建造导弹按钮
+                if (!building.missileBuilding && stored < maxM) {
+                    const buildBtn = document.createElement('button');
+                    const missileCost = BUILDINGS.missileFactory.missileCost;
+                    buildBtn.textContent = `建造导弹 (¥${missileCost})`;
+                    buildBtn.style.backgroundColor = '#e67e22';
+                    buildBtn.disabled = currentPlayer.gold < missileCost;
+                    
+                    buildBtn.addEventListener('click', () => {
+                        startMissileBuild(mapTile);
+                        updateSelectionInfo();
+                    });
+                    missilePanel.appendChild(buildBtn);
+                }
                 
-                repairButton.addEventListener('click', () => {
-                    repairBuilding(tile.x, tile.y);
-                    updateSelectionInfo();
-                });
+                // 发射导弹按钮
+                if (stored > 0) {
+                    const launchBtn = document.createElement('button');
+                    launchBtn.textContent = `发射导弹 (库存${stored}枚)`;
+                    launchBtn.style.backgroundColor = '#e74c3c';
+                    launchBtn.style.marginTop = '4px';
+                    
+                    launchBtn.addEventListener('click', () => {
+                        gameState.missileMode = true;
+                        gameState.selectedMissileFactory = mapTile;
+                        showElement('cancel-action-btn');
+                        showNotification('点击地图上的任意位置发射导弹！', 'info');
+                        highlightMissileRange();
+                    });
+                    missilePanel.appendChild(launchBtn);
+                }
                 
-                buildingInfo.appendChild(repairButton);
+                buildingInfo.appendChild(missilePanel);
             }
             
             // 如果是当前玩家的建筑（非首都），显示拆除按钮
@@ -437,11 +504,15 @@ function updateSelectionInfo() {
             
             // 显示健康状态
             const healthInfo = document.createElement('p');
-            // 确保健康值不为负数或NaN，并计算正确的百分比
             const currentHealth = Math.max(0, isNaN(unit.health) ? 0 : unit.health);
-            const healthPercent = Math.max(0, Math.min(100, Math.round((currentHealth / unitType.health) * 100)));
+            const unitMaxHP = unit.maxHealth || unitType.health;
+            const healthPercent = Math.max(0, Math.min(100, Math.round((currentHealth / unitMaxHP) * 100)));
             
-            healthInfo.textContent = `健康: ${currentHealth}/${unitType.health} (${healthPercent}%)`;
+            healthInfo.textContent = `健康: ${currentHealth}/${unitMaxHP} (${healthPercent}%)`;
+            if (unit.bonusMaxHealth > 0) {
+                healthInfo.textContent += ` [+${unit.bonusMaxHealth}]`;
+                healthInfo.style.color = '#e74c3c';
+            }
             unitInfo.appendChild(healthInfo);
             
             // 显示攻击力和防御力
@@ -503,8 +574,12 @@ function updateSelectionInfo() {
                 const boostedAttack = Math.floor(baseAttack * 1.15);
                 statsInfo.textContent = `攻击: ${baseAttack} → ${boostedAttack} (+15%) | 防御: ${unitType.defense}`;
                 statsInfo.style.color = '#27ae60'; // 绿色显示有加成的属性
+            } else if (unit.type === 'bloodBerserker') {
+                const actualAtk = unit.attack || unitType.attack;
+                const bonusAtk = unit.bonusAttack || 0;
+                statsInfo.textContent = `攻击: ${actualAtk}${bonusAtk > 0 ? ' [+' + bonusAtk + ']' : ''} | 防御: ${unitType.defense}`;
+                if (bonusAtk > 0) statsInfo.style.color = '#e74c3c';
             } else {
-                // 普通单位
                 statsInfo.textContent = `攻击: ${unitType.attack} | 防御: ${unitType.defense}`;
             }
             unitInfo.appendChild(statsInfo);
@@ -539,7 +614,21 @@ function updateSelectionInfo() {
             } else if (unit.type === 'commandUnit') {
                 const effectInfo = document.createElement('p');
                 effectInfo.textContent = `特殊效果: 指挥光环 (+20%攻击力和防御力)`;
-                effectInfo.style.color = '#e67e22'; // 橙色显示特殊效果
+                effectInfo.style.color = '#e67e22';
+                unitInfo.appendChild(effectInfo);
+            } else if (unit.type === 'bloodBerserker') {
+                const kills = unit.totalKills || 0;
+                const destroys = unit.totalDestroys || 0;
+                const effectInfo = document.createElement('div');
+                effectInfo.style.color = '#e74c3c';
+                effectInfo.style.fontSize = '12px';
+                effectInfo.style.marginTop = '4px';
+                effectInfo.innerHTML = `
+                    <strong>🔥 嗜血成长</strong><br>
+                    击杀单位: ${kills}次 (每次+5攻+10血)<br>
+                    摧毁建筑: ${destroys}次 (每次+10攻+5血)<br>
+                    累计成长: +${unit.bonusAttack || 0}攻击 +${unit.bonusMaxHealth || 0}生命
+                `;
                 unitInfo.appendChild(effectInfo);
             }
             
@@ -824,6 +913,9 @@ function updateMilitaryOptions() {
         const categoryUnits = Object.entries(UNITS).filter(([_, unit]) => unit.type === category.id);
         
         for (const [unitType, unit] of categoryUnits) {
+            // 跳过不可招募的单位（如海盗）
+            if (unit.cannotRecruit) continue;
+            
             // 创建单位按钮
             const unitBtn = document.createElement('button');
             unitBtn.className = 'military-button';
@@ -921,6 +1013,23 @@ function updateMilitaryOptions() {
                 reasonCannotRecruit += '本回合已达到招募限制！\n';
             }
             
+            // 检查嗜血狂魔解锁条件
+            if (unit.unlockCondition) {
+                const unlocked = isBloodBerserkerUnlocked(currentPlayer);
+                const recentKills = (currentPlayer.killHistory || []).filter(t => gameState.turn - t < 10).length;
+                if (!unlocked) {
+                    canRecruit = false;
+                    reasonCannotRecruit += `未解锁！击杀进度：${recentKills}/5（近10回合）\n`;
+                }
+                // 在按钮上显示解锁进度
+                const progressText = unlocked ? '✅ 已解锁' : `🔒 ${recentKills}/5击杀`;
+                unitBtn.innerHTML = `
+                    <strong>${unit.name}</strong> <span style="font-size:11px;color:${unlocked ? '#27ae60' : '#e67e22'}">${progressText}</span>
+                    <div>¥${unit.cost}</div>
+                    <div>攻击: ${unit.attack} | 防御: ${unit.defense} | 生命: ${unit.health}</div>
+                `;
+            }
+            
             if (!canRecruit) {
                 unitBtn.disabled = true;
                 unitBtn.classList.add('disabled');
@@ -954,58 +1063,36 @@ function updateEnchantmentOptions() {
     enchantmentPanel.innerHTML = '';
     
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
-    const hasMagicAcademy = currentPlayer.buildings.some(b => b.type === 'magicAcademy');
+    const totalEnchantments = Object.keys(ENCHANTMENTS).length;
     
-    // 标题
-    const title = document.createElement('h3');
-    title.textContent = '词条系统';
-    enchantmentPanel.appendChild(title);
-    
-    if (!hasMagicAcademy) {
-        const notice = document.createElement('p');
-        notice.textContent = '需要建造「魔法学院」才能解锁词条系统。';
-        notice.style.color = '#999';
-        notice.style.fontStyle = 'italic';
-        notice.style.padding = '10px 0';
-        enchantmentPanel.appendChild(notice);
-        return;
-    }
-    
-    // 已拥有词条
+    // 已拥有词条标签
     if (currentPlayer.enchantments.length > 0) {
-        const ownedTitle = document.createElement('h4');
-        ownedTitle.textContent = `已拥有词条 (${currentPlayer.enchantments.length}/9)`;
-        ownedTitle.style.marginBottom = '5px';
-        ownedTitle.style.color = '#27ae60';
+        const ownedTitle = document.createElement('div');
+        ownedTitle.className = 'ench-section-title';
+        ownedTitle.textContent = `已拥有 (${currentPlayer.enchantments.length}/${totalEnchantments})`;
         enchantmentPanel.appendChild(ownedTitle);
         
-        const ownedContainer = document.createElement('div');
-        ownedContainer.style.marginBottom = '15px';
+        const ownedTags = document.createElement('div');
+        ownedTags.className = 'ench-owned-tags';
         
         currentPlayer.enchantments.forEach(enchId => {
             const ench = ENCHANTMENTS[enchId];
             if (ench) {
                 const tag = document.createElement('span');
+                tag.className = 'ench-tag';
                 tag.textContent = `${ench.icon} ${ench.name}`;
-                tag.style.display = 'inline-block';
-                tag.style.padding = '3px 8px';
-                tag.style.margin = '2px';
-                tag.style.backgroundColor = '#27ae60';
-                tag.style.color = 'white';
-                tag.style.borderRadius = '12px';
-                tag.style.fontSize = '12px';
                 tag.title = ench.desc;
-                ownedContainer.appendChild(tag);
+                ownedTags.appendChild(tag);
             }
         });
         
-        enchantmentPanel.appendChild(ownedContainer);
+        enchantmentPanel.appendChild(ownedTags);
     }
     
     // 可购买词条
-    const availableTitle = document.createElement('h4');
+    const availableTitle = document.createElement('div');
+    availableTitle.className = 'ench-section-title';
     availableTitle.textContent = '可购买词条';
-    availableTitle.style.marginBottom = '8px';
     enchantmentPanel.appendChild(availableTitle);
     
     const enchList = document.createElement('div');
@@ -1013,90 +1100,114 @@ function updateEnchantmentOptions() {
     
     for (const [enchId, ench] of Object.entries(ENCHANTMENTS)) {
         const owned = currentPlayer.enchantments.includes(enchId);
+        const canAfford = currentPlayer.gold >= ench.cost;
         
-        const enchBtn = document.createElement('button');
-        enchBtn.className = 'enchantment-btn';
-        enchBtn.style.display = 'flex';
-        enchBtn.style.justifyContent = 'space-between';
-        enchBtn.style.alignItems = 'center';
-        enchBtn.style.textAlign = 'left';
-        enchBtn.style.padding = '8px 12px';
-        enchBtn.style.marginBottom = '6px';
-        enchBtn.style.backgroundColor = owned ? '#95a5a6' : '#8e44ad';
-        enchBtn.style.fontSize = '13px';
+        const card = document.createElement('div');
+        card.className = 'enchantment-card';
+        if (owned) card.classList.add('ench-owned');
+        else if (!canAfford) card.classList.add('ench-disabled');
         
-        enchBtn.innerHTML = `
-            <div>
-                <strong>${ench.icon} ${ench.name}</strong>
-                <div style="font-size: 11px; opacity: 0.9;">${ench.desc}</div>
-            </div>
-            <div style="white-space: nowrap; margin-left: 8px;">
-                ${owned ? '已拥有' : `¥${ench.cost}`}
-            </div>
-        `;
+        // 图标
+        const icon = document.createElement('div');
+        icon.className = 'ench-icon';
+        icon.textContent = ench.icon;
         
-        if (owned || currentPlayer.gold < ench.cost) {
-            enchBtn.disabled = true;
-            enchBtn.classList.add('disabled');
+        // 主体
+        const body = document.createElement('div');
+        body.className = 'ench-body';
+        
+        const name = document.createElement('div');
+        name.className = 'ench-name';
+        name.textContent = ench.name;
+        
+        const desc = document.createElement('div');
+        desc.className = 'ench-desc';
+        desc.textContent = ench.desc;
+        
+        body.appendChild(name);
+        body.appendChild(desc);
+        
+        // 价格
+        const price = document.createElement('div');
+        price.className = 'ench-price';
+        if (owned) {
+            price.classList.add('owned-badge');
+            price.textContent = '已拥有';
+        } else if (canAfford) {
+            price.classList.add('affordable');
+            price.textContent = `¥${ench.cost}`;
+        } else {
+            price.classList.add('too-expensive');
+            price.textContent = `¥${ench.cost}`;
         }
         
-        if (!owned) {
-            enchBtn.addEventListener('click', () => {
+        card.appendChild(icon);
+        card.appendChild(body);
+        card.appendChild(price);
+        
+        if (!owned && canAfford) {
+            card.addEventListener('click', () => {
                 purchaseEnchantment(enchId);
             });
         }
         
-        enchList.appendChild(enchBtn);
+        enchList.appendChild(card);
     }
     
     enchantmentPanel.appendChild(enchList);
 }
 
+// 将屏幕事件坐标转换为地图格子坐标（统一计算，点击和悬浮共用）
+function eventToTileCoords(event) {
+    const rect = canvas.getBoundingClientRect();
+    const cssX = event.clientX - rect.left;
+    const cssY = event.clientY - rect.top;
+
+    // 从 CSS 显示尺寸映射到 canvas 内部像素
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const canvasX = cssX * scaleX;
+    const canvasY = cssY * scaleY;
+
+    // 使用 canvas 内部像素 / 整数格子尺寸，避免浮点累积误差
+    const cellW = canvas.width / GRID_WIDTH;
+    const cellH = canvas.height / GRID_HEIGHT;
+
+    return {
+        x: Math.min(GRID_WIDTH - 1, Math.max(0, Math.floor(canvasX / cellW))),
+        y: Math.min(GRID_HEIGHT - 1, Math.max(0, Math.floor(canvasY / cellH)))
+    };
+}
+
+// 拖拽检测：记录 mousedown 位置，超过阈值视为拖拽而非点击
+let _mouseDownPos = null;
+function trackMouseDown(e) {
+    _mouseDownPos = { x: e.clientX, y: e.clientY };
+}
+
 // 处理画布点击事件
 function handleCanvasClick(event) {
-    // 获取点击坐标
-    const rect = canvas.getBoundingClientRect();
+    if (gameState.aiExecuting) return;
     
-    // 记录原始点击位置和Canvas尺寸
-    const clickX = event.clientX - rect.left;
-    const clickY = event.clientY - rect.top;
+    // 拖拽时不触发点击
+    if (_mouseDownPos) {
+        const dx = Math.abs(event.clientX - _mouseDownPos.x);
+        const dy = Math.abs(event.clientY - _mouseDownPos.y);
+        if (dx > 5 || dy > 5) {
+            _mouseDownPos = null;
+            return;
+        }
+    }
+    _mouseDownPos = null;
     
-    // 从渲染函数获取单元格大小，确保与绘制逻辑一致
-    const cellWidth = canvas.width / GRID_WIDTH;
-    const cellHeight = canvas.height / GRID_HEIGHT;
+    const { x, y } = eventToTileCoords(event);
     
-    // 鼠标指针偏移校正 - 许多自定义光标的"热点"不在左上角，而是在中心或其他位置
-    // 通过调整坐标，可以让点击位置更加精确
-    // 根据用户反馈，调整偏移量以更准确地映射鼠标点击位置
-    const cursorOffsetX = cellWidth * 0.38;  // 水平偏移量，相当于大约38%的单元格宽度
-    const cursorOffsetY = cellHeight * 0.32; // 垂直偏移量，相当于大约32%的单元格高度
-    
-    const adjustedClickX = clickX + cursorOffsetX; // 水平方向向右偏移
-    const adjustedClickY = clickY + cursorOffsetY; // 垂直方向向下偏移
-    
-    // 直接计算格子索引，与渲染逻辑保持一致
-    // 使用调整后的坐标
-    const x = Math.floor(adjustedClickX / cellWidth);
-    const y = Math.floor(adjustedClickY / cellHeight);
-    
-    // 调试信息
-    console.log(`点击位置: (${event.clientX}, ${event.clientY})`);
-    console.log(`Canvas相对位置: 左=${rect.left}, 上=${rect.top}, 宽=${rect.width}, 高=${rect.height}`);
-    console.log(`Canvas内点击位置: (${clickX}, ${clickY})`);
-    console.log(`调整后的点击位置: (${adjustedClickX}, ${adjustedClickY})`);
-    console.log(`Canvas渲染尺寸: 宽=${canvas.width}, 高=${canvas.height}`);
-    console.log(`单元格尺寸: 宽=${cellWidth}, 高=${cellHeight}`);
-    console.log(`计算的格子坐标: (${x}, ${y})`);
-    
-    // 确保坐标在地图范围内
     if (x < 0 || x >= GRID_WIDTH || y < 0 || y >= GRID_HEIGHT) {
-        console.log('点击位置超出地图范围');
         return;
     }
     
     const tileIndex = y * GRID_WIDTH + x;
     const clickedTile = gameState.map[tileIndex];
-    console.log(`选中的格子: 索引=${tileIndex}, x=${clickedTile.x}, y=${clickedTile.y}`);
     
     // 如果在建造模式
     if (gameState.buildMode) {
@@ -1119,6 +1230,12 @@ function handleCanvasClick(event) {
     // 如果在修理模式
     if (gameState.repairMode) {
         handleRepairModeClick(x, y);
+        return;
+    }
+    
+    // 如果在导弹瞄准模式
+    if (gameState.missileMode && gameState.selectedMissileFactory) {
+        handleMissileModeClick(x, y);
         return;
     }
     
@@ -1145,7 +1262,7 @@ function handleBuildModeClick(x, y) {
     const currentPlayer = gameState.players[gameState.currentPlayerIndex];
     const buildingType = gameState.selectedBuildingType;
     
-    // 城市建造使用专用逻辑
+    // 城市建造使用专用逻辑（城市有特殊放置规则，不做连续建造）
     if (buildingType === 'city') {
         if (startCityBuilding(x, y)) {
             exitBuildMode();
@@ -1161,15 +1278,12 @@ function handleBuildModeClick(x, y) {
         return;
     }
     
-    // 检查是否已经有建筑
-    if (clickedTile.building) {
-        showNotification('该位置已经有建筑！', 'error');
-        return;
-    }
-    
-    // 检查是否已经有单位
-    if (clickedTile.unit) {
-        showNotification('该位置有军事单位，无法建造建筑！', 'error');
+    // 如果点击的格子有建筑或单位，退出建造模式并选中该格子
+    if (clickedTile.building || clickedTile.unit) {
+        exitBuildMode();
+        gameState.selectedTile = { x, y };
+        updateGameStateDisplay();
+        drawMap();
         return;
     }
     
@@ -1187,9 +1301,16 @@ function handleBuildModeClick(x, y) {
     }
     
     // 检查地形约束
-    if (clickedTile.terrain === 'water') {
-        showNotification('不能在水域上建造建筑！', 'error');
-        return;
+    if (BUILDINGS[buildingType] && BUILDINGS[buildingType].waterOnly) {
+        if (clickedTile.terrain !== 'water') {
+            showNotification(`${BUILDINGS[buildingType].name}只能建在水域上！`, 'error');
+            return;
+        }
+    } else {
+        if (clickedTile.terrain === 'water') {
+            showNotification('不能在水域上建造建筑！', 'error');
+            return;
+        }
     }
     
     if (buildingType === 'mine' && clickedTile.terrain !== 'mountain') {
@@ -1198,13 +1319,27 @@ function handleBuildModeClick(x, y) {
     }
     
     if (startBuilding(x, y, buildingType)) {
-        exitBuildMode();
         updateGameStateDisplay();
         drawMap();
         
-        const buildingName = BUILDINGS[buildingType].name;
-        const buildTime = BUILDINGS[buildingType].buildTime || 2;
-        showNotification(`开始建造${buildingName}，将在${buildTime}回合后完成。`, 'success');
+        const buildingDef = BUILDINGS[buildingType];
+        const buildingName = buildingDef.name;
+        
+        // 唯一建筑建造后退出
+        if (buildingDef.isUnique) {
+            exitBuildMode();
+            showNotification(`开始建造${buildingName}，该建筑为唯一建筑。`, 'success');
+            return;
+        }
+        
+        // 检查金币是否还够继续建造
+        if (currentPlayer.gold < buildingDef.cost) {
+            exitBuildMode();
+            showNotification(`${buildingName}已开始建造。金币不足，退出建造模式。`, 'success');
+            return;
+        }
+        
+        showNotification(`${buildingName}已开始建造，继续点击可连续放置。`, 'success');
     }
 }
 
@@ -1302,6 +1437,45 @@ function handleRecruitModeClick(x, y) {
         const unitName = UNITS[unitType].name;
         showNotification(`成功招募${unitName}！`, 'success');
     }
+}
+
+// 处理导弹瞄准模式点击
+function handleMissileModeClick(x, y) {
+    if (!gameState.selectedMissileFactory) {
+        showNotification('未选择导弹工厂！', 'error');
+        exitMissileMode();
+        return;
+    }
+    
+    launchMissile(gameState.selectedMissileFactory, x, y);
+    exitMissileMode();
+}
+
+// 退出导弹瞄准模式
+function exitMissileMode() {
+    gameState.missileMode = false;
+    gameState.selectedMissileFactory = null;
+    hideElement('cancel-action-btn');
+    updateCursor('default');
+    clearTileHighlights();
+    drawMap();
+}
+
+// 高亮导弹AoE范围预览（整个地图都是合法目标，但显示当前鼠标位置的爆炸范围）
+function highlightMissileRange() {
+    clearTileHighlights();
+    
+    for (let y = 0; y < GRID_HEIGHT; y++) {
+        for (let x = 0; x < GRID_WIDTH; x++) {
+            const idx = y * GRID_WIDTH + x;
+            gameState.map[idx].highlight = {
+                color: 'rgba(231, 76, 60, 0.15)',
+                border: '1px solid rgba(231, 76, 60, 0.3)'
+            };
+        }
+    }
+    
+    drawMap();
 }
 
 // 开始建造模式
@@ -1449,22 +1623,20 @@ function updateCursor(mode) {
 
 // 检查是否可以招募指定类型的军事单位
 function canRecruitMilitaryUnit(unitType) {
-    // 检查招募限制
-    if (unitType === 'infantryUnit' || unitType === 'rifleUnit') {
-        // 军营单位
+    const unitInfo = UNITS[unitType];
+    if (!unitInfo) return true;
+    
+    const requiredBuilding = unitInfo.requiredBuilding;
+    if (!requiredBuilding) return true;
+    
+    if (requiredBuilding === 'barracks') {
         return gameState.factoryProduction.barracksBuiltThisRound < 1;
-    } else if (unitType === 'tankUnit' || unitType === 'artilleryUnit') {
-        // 军事工厂单位
+    } else if (requiredBuilding === 'armoryFactory') {
         return gameState.factoryProduction.armoryFactoryBuiltThisRound < 1;
-    } else if (unitType === 'heavyTank' || unitType === 'bomber') {
-        // 大型军事工厂单位
+    } else if (requiredBuilding === 'bigArmoryFactory') {
         return gameState.factoryProduction.bigArmoryFactoryBuiltThisRound < 2;
-    } else if (unitType === 'instructor' || unitType === 'commandUnit') {
-        // 特殊单位没有回合招募限制
-        return true;
     }
     
-    // 默认允许招募
     return true;
 }
 
@@ -1477,6 +1649,8 @@ function resetGameModes() {
     gameState.attackMode = false;
     gameState.repairMode = false;
     gameState.recruitMode = false;
+    gameState.missileMode = false;
+    gameState.selectedMissileFactory = null;
     gameState.selectedUnitType = null;
     
     // 隐藏所有预览和取消按钮
@@ -1498,15 +1672,20 @@ function cancelCurrentAction() {
 
 // 结束当前回合
 function endTurn() {
-    // 重置所有操作模式
+    // 防止AI回合时人类手动结束回合
+    const curPlayer = gameState.players[gameState.currentPlayerIndex];
+    if (curPlayer && curPlayer.isAI && gameState.aiExecuting) return;
+    
     resetGameModes();
-    
-    // 处理回合结束逻辑
     processEndOfTurn();
-    
-    // 更新游戏状态显示并重绘
     updateGameStateDisplay();
     drawMap();
+    
+    // 如果下一个玩家是AI，自动执行AI回合
+    const nextPlayer = gameState.players[gameState.currentPlayerIndex];
+    if (nextPlayer && nextPlayer.isAI && !nextPlayer.isDefeated && !gameState.isGameOver) {
+        setTimeout(() => executeAITurn(), 600);
+    }
 }
 
 // 获取地形名称
@@ -1521,85 +1700,193 @@ function getTerrainName(terrain) {
     return terrainNames[terrain] || terrain;
 }
 
-// 显示玩家数量选择对话框
+// 显示玩家数量选择对话框（支持AI玩家和地图尺寸设置）
 function showPlayerCountDialog() {
-    console.log("显示玩家数量选择对话框");
-    
-    // 创建对话框背景遮罩
     const overlay = document.createElement('div');
-    overlay.style.position = 'fixed';
-    overlay.style.top = '0';
-    overlay.style.left = '0';
-    overlay.style.width = '100%';
-    overlay.style.height = '100%';
-    overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
-    overlay.style.display = 'flex';
-    overlay.style.justifyContent = 'center';
-    overlay.style.alignItems = 'center';
-    overlay.style.zIndex = '1000';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);display:flex;justify-content:center;align-items:center;z-index:1000;';
     
-    // 创建对话框容器
     const dialog = document.createElement('div');
-    dialog.style.backgroundColor = '#fff';
-    dialog.style.padding = '20px';
-    dialog.style.borderRadius = '8px';
-    dialog.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.2)';
-    dialog.style.width = '300px';
-    dialog.style.textAlign = 'center';
+    dialog.style.cssText = 'background:#fff;padding:24px 28px;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.25);width:400px;text-align:center;max-height:90vh;overflow-y:auto;';
     
-    // 创建标题
-    const title = document.createElement('h3');
-    title.textContent = '选择玩家数量';
-    title.style.marginTop = '0';
+    let selectedCount = 2;
+    let aiPlayerIndices = new Set();
+    let selectedMapSize = getRecommendedMapSize(selectedCount);
     
-    // 创建选择按钮容器
-    const buttonContainer = document.createElement('div');
-    buttonContainer.style.display = 'flex';
-    buttonContainer.style.justifyContent = 'center';
-    buttonContainer.style.gap = '10px';
-    buttonContainer.style.margin = '20px 0';
-    
-    // 创建玩家数量选择按钮（2-5人）
-    for (let i = 2; i <= 5; i++) {
-        const button = document.createElement('button');
-        button.textContent = `${i}人`;
-        button.style.width = '50px';
-        button.style.height = '50px';
-        button.style.borderRadius = '50%';
-        button.style.display = 'flex';
-        button.style.justifyContent = 'center';
-        button.style.alignItems = 'center';
-        button.style.fontSize = '18px';
+    function render() {
+        dialog.innerHTML = '';
         
-        // 添加点击事件
-        button.addEventListener('click', () => {
-            console.log(`选择了${i}人游戏`);
+        const title = document.createElement('h3');
+        title.textContent = '新游戏设置';
+        title.style.cssText = 'margin:0 0 18px 0;font-size:18px;color:#2c3e50;';
+        dialog.appendChild(title);
+        
+        // ====== 参战人数 ======
+        const countLabel = document.createElement('div');
+        countLabel.textContent = '参战人数';
+        countLabel.style.cssText = 'font-size:13px;color:#777;margin-bottom:8px;font-weight:600;';
+        dialog.appendChild(countLabel);
+        
+        const countRow = document.createElement('div');
+        countRow.style.cssText = 'display:flex;justify-content:center;gap:8px;margin-bottom:16px;';
+        
+        for (let i = 2; i <= 5; i++) {
+            const btn = document.createElement('button');
+            btn.textContent = `${i}人`;
+            const isSelected = i === selectedCount;
+            btn.style.cssText = `width:56px;height:40px;border-radius:6px;font-size:15px;font-weight:700;border:2px solid ${isSelected ? '#3498db' : '#ddd'};background:${isSelected ? '#3498db' : '#fff'};color:${isSelected ? '#fff' : '#555'};cursor:pointer;transition:all 0.15s;`;
+            btn.addEventListener('click', () => {
+                selectedCount = i;
+                for (const idx of [...aiPlayerIndices]) {
+                    if (idx >= i) aiPlayerIndices.delete(idx);
+                }
+                selectedMapSize = getRecommendedMapSize(i);
+                render();
+            });
+            countRow.appendChild(btn);
+        }
+        dialog.appendChild(countRow);
+        
+        // ====== 地图尺寸 ======
+        const mapLabel = document.createElement('div');
+        mapLabel.textContent = '地图尺寸';
+        mapLabel.style.cssText = 'font-size:13px;color:#777;margin-bottom:8px;font-weight:600;';
+        dialog.appendChild(mapLabel);
+        
+        const mapRow = document.createElement('div');
+        mapRow.style.cssText = 'display:flex;flex-direction:column;gap:5px;margin-bottom:16px;';
+        
+        for (const [key, size] of Object.entries(MAP_SIZES)) {
+            const isSelected = key === selectedMapSize;
+            const isRecommended = key === getRecommendedMapSize(selectedCount);
+            
+            const sizeBtn = document.createElement('div');
+            sizeBtn.style.cssText = `display:flex;align-items:center;justify-content:space-between;padding:8px 14px;border-radius:6px;border:2px solid ${isSelected ? '#3498db' : '#e8e8e8'};background:${isSelected ? '#eef4ff' : '#fafafa'};cursor:pointer;transition:all 0.15s;`;
+            
+            const leftPart = document.createElement('div');
+            leftPart.style.cssText = 'display:flex;align-items:center;gap:8px;';
+            
+            const radio = document.createElement('div');
+            radio.style.cssText = `width:16px;height:16px;border-radius:50%;border:2px solid ${isSelected ? '#3498db' : '#bbb'};background:${isSelected ? '#3498db' : '#fff'};flex-shrink:0;position:relative;`;
+            if (isSelected) {
+                const dot = document.createElement('div');
+                dot.style.cssText = 'width:6px;height:6px;border-radius:50%;background:#fff;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);';
+                radio.appendChild(dot);
+            }
+            
+            const nameLabel = document.createElement('span');
+            nameLabel.style.cssText = `font-weight:700;font-size:14px;color:${isSelected ? '#2c3e50' : '#555'};`;
+            nameLabel.textContent = size.name;
+            
+            leftPart.appendChild(radio);
+            leftPart.appendChild(nameLabel);
+            
+            const rightPart = document.createElement('div');
+            rightPart.style.cssText = 'display:flex;align-items:center;gap:6px;';
+            
+            const descSpan = document.createElement('span');
+            descSpan.style.cssText = 'font-size:12px;color:#999;';
+            descSpan.textContent = size.desc;
+            rightPart.appendChild(descSpan);
+            
+            if (isRecommended) {
+                const badge = document.createElement('span');
+                badge.style.cssText = 'font-size:10px;padding:1px 6px;border-radius:8px;background:#27ae60;color:#fff;font-weight:600;white-space:nowrap;';
+                badge.textContent = `${size.recommend}推荐`;
+                rightPart.appendChild(badge);
+            }
+            
+            sizeBtn.appendChild(leftPart);
+            sizeBtn.appendChild(rightPart);
+            
+            sizeBtn.addEventListener('click', () => {
+                selectedMapSize = key;
+                render();
+            });
+            
+            mapRow.appendChild(sizeBtn);
+        }
+        dialog.appendChild(mapRow);
+        
+        // ====== 玩家列表 ======
+        const listLabel = document.createElement('div');
+        listLabel.textContent = '玩家设置（点击切换 人类/电脑）';
+        listLabel.style.cssText = 'font-size:13px;color:#777;margin-bottom:8px;font-weight:600;';
+        dialog.appendChild(listLabel);
+        
+        const playerList = document.createElement('div');
+        playerList.style.cssText = 'display:flex;flex-direction:column;gap:5px;margin-bottom:18px;';
+        
+        const playerColors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6'];
+        for (let i = 0; i < selectedCount; i++) {
+            const isAI = aiPlayerIndices.has(i);
+            const row = document.createElement('div');
+            row.style.cssText = `display:flex;align-items:center;justify-content:space-between;padding:8px 12px;border-radius:6px;border:1.5px solid ${isAI ? '#e67e22' : '#27ae60'};background:${isAI ? '#fef5e7' : '#f0faf4'};cursor:pointer;transition:all 0.15s;`;
+            
+            const colorDot = document.createElement('span');
+            colorDot.style.cssText = `width:12px;height:12px;border-radius:50%;background:${playerColors[i]};flex-shrink:0;`;
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.style.cssText = 'font-weight:600;font-size:14px;flex:1;text-align:left;margin-left:10px;';
+            nameSpan.textContent = `玩家${i + 1}`;
+            
+            const typeTag = document.createElement('span');
+            typeTag.style.cssText = `font-size:12px;padding:2px 10px;border-radius:10px;font-weight:700;background:${isAI ? '#e67e22' : '#27ae60'};color:#fff;`;
+            typeTag.textContent = isAI ? '🤖 电脑' : '👤 人类';
+            
+            row.appendChild(colorDot);
+            row.appendChild(nameSpan);
+            row.appendChild(typeTag);
+            
+            row.addEventListener('click', () => {
+                if (isAI) {
+                    aiPlayerIndices.delete(i);
+                } else {
+                    const humanCount = selectedCount - aiPlayerIndices.size;
+                    if (humanCount <= 1) {
+                        showNotification('至少需要1个人类玩家！', 'error');
+                        return;
+                    }
+                    aiPlayerIndices.add(i);
+                }
+                render();
+            });
+            
+            playerList.appendChild(row);
+        }
+        dialog.appendChild(playerList);
+        
+        // ====== 按钮行 ======
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:10px;';
+        
+        const startBtn = document.createElement('button');
+        const aiCount = aiPlayerIndices.size;
+        const humanCount = selectedCount - aiCount;
+        const mapInfo = MAP_SIZES[selectedMapSize];
+        const label = aiCount > 0 
+            ? `开始 (${humanCount}人+${aiCount}电脑 · ${mapInfo.name}地图)` 
+            : `开始 ${selectedCount}人 · ${mapInfo.name}地图`;
+        startBtn.textContent = label;
+        startBtn.style.cssText = 'flex:1;padding:10px;font-size:14px;font-weight:700;background:#3498db;color:#fff;border:none;border-radius:6px;cursor:pointer;';
+        startBtn.addEventListener('click', () => {
             document.body.removeChild(overlay);
-            startNewGame(i);
+            startNewGame(selectedCount, [...aiPlayerIndices], selectedMapSize);
         });
         
-        buttonContainer.appendChild(button);
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = '取消';
+        cancelBtn.style.cssText = 'width:70px;padding:10px;font-size:14px;background:#e74c3c;color:#fff;border:none;border-radius:6px;cursor:pointer;';
+        cancelBtn.addEventListener('click', () => {
+            document.body.removeChild(overlay);
+        });
+        
+        btnRow.appendChild(startBtn);
+        btnRow.appendChild(cancelBtn);
+        dialog.appendChild(btnRow);
     }
     
-    // 创建取消按钮
-    const cancelButton = document.createElement('button');
-    cancelButton.textContent = '取消';
-    cancelButton.style.backgroundColor = '#e74c3c';
-    cancelButton.style.marginTop = '10px';
-    
-    // 添加取消按钮点击事件
-    cancelButton.addEventListener('click', () => {
-        console.log("取消选择玩家数量");
-        document.body.removeChild(overlay);
-    });
-    
-    // 组装对话框
-    dialog.appendChild(title);
-    dialog.appendChild(buttonContainer);
-    dialog.appendChild(cancelButton);
+    render();
     overlay.appendChild(dialog);
-    
-    // 添加到页面
     document.body.appendChild(overlay);
 }
 
@@ -1635,6 +1922,9 @@ function highlightAvailableBuildTiles() {
         return;
     }
     
+    // 判断是否为水域专属建筑
+    const isWaterOnly = BUILDINGS[buildingType] && BUILDINGS[buildingType].waterOnly;
+    
     // 普通建筑高亮
     for (let y = 0; y < GRID_HEIGHT; y++) {
         for (let x = 0; x < GRID_WIDTH; x++) {
@@ -1642,12 +1932,16 @@ function highlightAvailableBuildTiles() {
             const tile = gameState.map[tileIndex];
             
             if (tile.ownerId === currentPlayer.id && !tile.building && !tile.unit) {
-                if (tile.terrain === 'water') continue;
+                if (isWaterOnly) {
+                    if (tile.terrain !== 'water') continue;
+                } else {
+                    if (tile.terrain === 'water') continue;
+                }
                 if (buildingType === 'mine' && tile.terrain !== 'mountain') continue;
                 
                 tile.highlight = {
-                    color: 'rgba(46, 204, 113, 0.4)',
-                    border: '2px solid #27ae60'
+                    color: isWaterOnly ? 'rgba(52, 152, 219, 0.4)' : 'rgba(46, 204, 113, 0.4)',
+                    border: isWaterOnly ? '2px solid #2980b9' : '2px solid #27ae60'
                 };
             }
         }
@@ -1884,22 +2178,12 @@ let _lastHoverTileX = -1;
 let _lastHoverTileY = -1;
 
 function handleCanvasHover(event) {
-    if (!gameState || !gameState.map) return;
+    if (!gameState || !gameState.map || gameState.map.length === 0) return;
 
     const tooltip = document.getElementById('map-tooltip');
     if (!tooltip) return;
 
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const mouseX = (event.clientX - rect.left) * scaleX;
-    const mouseY = (event.clientY - rect.top) * scaleY;
-
-    const cellWidth = canvas.width / GRID_WIDTH;
-    const cellHeight = canvas.height / GRID_HEIGHT;
-
-    const tileX = Math.floor(mouseX / cellWidth);
-    const tileY = Math.floor(mouseY / cellHeight);
+    const { x: tileX, y: tileY } = eventToTileCoords(event);
 
     if (tileX < 0 || tileX >= GRID_WIDTH || tileY < 0 || tileY >= GRID_HEIGHT) {
         hideMapTooltip();
@@ -2010,6 +2294,15 @@ function buildTooltipHTML(tile, x, y) {
 
             if (building.isCityPart) {
                 lines.push(`<div style="font-size:11px;opacity:0.7;margin-top:2px;">城市副格(锚点:${building.anchorX},${building.anchorY})</div>`);
+            }
+            
+            if (building.type === 'missileFactory') {
+                const stored = building.storedMissiles || 0;
+                const maxM = BUILDINGS.missileFactory.maxMissiles;
+                lines.push(`<div class="tooltip-row"><span class="tooltip-label">导弹</span><span class="tooltip-value">${stored}/${maxM}</span></div>`);
+                if (building.missileBuilding) {
+                    lines.push(`<div style="color:#f39c12;font-size:11px;">建造中(${building.missileBuildTurns}回合)</div>`);
+                }
             }
         }
     }

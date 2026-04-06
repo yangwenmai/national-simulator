@@ -188,6 +188,56 @@ const BUILDINGS = {
             effect: '建成后所有军事单位每回合既可以移动，也可以攻击一次'
         }
     },
+    missileFactory: {
+        name: '导弹工厂',
+        desc: '可生产并存储导弹（最多3枚）。每枚导弹700金币，3回合建造。',
+        combatNotes: '所有建筑享有25%的伤害减免。',
+        cost: 2000,
+        income: -50,
+        maxHealth: 250,
+        buildTime: 5,
+        category: 'military',
+        isUnique: false,
+        maxMissiles: 3,
+        missileCost: 700,
+        missileBuildTime: 3,
+        special: {
+            name: '导弹发射',
+            effect: '可向任意点位发射导弹，3格半径内建筑受100-200点伤害'
+        }
+    },
+    repairShop: {
+        name: '修理厂',
+        desc: '拥有修理厂后可选择花钱修复受损建筑。不同建筑修理费用不同（建筑造价的30%×损失血量比例）。',
+        combatNotes: '所有建筑享有25%的伤害减免。',
+        cost: 400,
+        income: -20,
+        maxHealth: 200,
+        buildTime: 2,
+        category: 'support',
+        isUnique: true,
+        special: {
+            name: '建筑修复',
+            effect: '解锁建筑修理功能，可花费金币修复受损建筑'
+        }
+    },
+    pirateShip: {
+        name: '海盗船',
+        desc: '水域专属建筑。每2回合刷新一个中立海盗，海盗会自动向最近首都移动并攻击沿途所有单位和建筑。击杀海盗可获得100金币。',
+        combatNotes: '海盗船只能建在水域上。海盗会主动寻路攻击。',
+        cost: 200,
+        income: -10,
+        maxHealth: 150,
+        buildTime: 2,
+        category: 'military',
+        isUnique: false,
+        waterOnly: true,
+        pirateSpawnInterval: 2,
+        special: {
+            name: '海盗刷新',
+            effect: '每2回合在附近生成一个中立海盗，海盗会自动向最近首都移动并攻击沿途所有目标'
+        }
+    },
     magicAcademy: {
         name: '魔法学院',
         desc: '强大的魔法建筑，解锁词条系统和魔法兵招募。建造需要5回合。',

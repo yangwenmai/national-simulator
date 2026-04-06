@@ -90,6 +90,26 @@ const UNITS = {
         requiredBuilding: 'armoryFactory'
     },
     
+    archer: {
+        name: '弓箭手',
+        desc: '远距离精准射手，造成目标25%生命值伤害。但每次攻击有50%概率对自身造成50%伤害。',
+        combatNotes: '造成目标25%当前血量伤害。50%概率自身受到50%当前血量伤害。',
+        cost: 500,
+        attack: 30,
+        defense: 10,
+        health: 100,
+        moveRange: 2,
+        attackRange: 5,
+        buildTime: 2,
+        type: 'ground',
+        requiredBuilding: 'barracks',
+        special: {
+            name: '精准射击',
+            effect: '造成目标25%血量伤害，50%概率对自己造成50%血量伤害'
+        },
+        percentageDamage: true
+    },
+    
     // 特殊单位
     commandUnit: {
         name: '指挥单位',
@@ -170,6 +190,43 @@ const UNITS = {
             { id: 'reflection', name: '反伤', desc: '当受到攻击时，反弹50%伤害给攻击者' },
             { id: 'armorBreak', name: '破甲', desc: '使目标建筑永久失去防御' }
         ]
+    },
+    pirate: {
+        name: '海盗',
+        desc: '从海盗船刷新的中立敌对单位，会自动寻找最近首都并沿途攻击所有单位和建筑。击杀可获得100金币。',
+        combatNotes: '中立单位，主动移动并攻击路径上所有目标。击杀奖励100金币。',
+        cost: 0,
+        attack: 20,
+        defense: 8,
+        health: 70,
+        moveRange: 2,
+        attackRange: 1,
+        buildTime: 0,
+        type: 'ground',
+        isNeutral: true,
+        cannotRecruit: true,
+        killReward: 100
+    },
+    bloodBerserker: {
+        name: '嗜血狂魔',
+        desc: '杀戮成长型单位。击杀军事单位+10生命+5攻击，摧毁建筑+10攻击+5生命。',
+        combatNotes: '解锁条件：10回合内击杀5个军事单位。每次击杀/摧毁都会成长变强。',
+        cost: 300,
+        attack: 30,
+        defense: 10,
+        health: 50,
+        moveRange: 2,
+        attackRange: 1,
+        buildTime: 0,
+        type: 'special',
+        requiredBuilding: 'barracks',
+        special: {
+            name: '嗜血成长',
+            effect: '击杀军事单位：+10最大生命+5攻击力。摧毁建筑：+10攻击力+5最大生命。'
+        },
+        unlockCondition: { killUnits: 5, withinTurns: 10 },
+        growthOnKillUnit: { maxHealth: 10, attack: 5 },
+        growthOnDestroyBuilding: { attack: 10, maxHealth: 5 }
     }
 };
 

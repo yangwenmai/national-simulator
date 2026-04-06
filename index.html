@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>国家对战模拟器 | National Battle Simulator</title>
-    <link rel="stylesheet" href="css/style.css?v=1.2">
+    <link rel="stylesheet" href="css/style.css?v=2.3">
     <style>
         /* 反馈按钮样式 - 气泡样式 */
         .feedback-btn {
@@ -81,7 +81,14 @@
             
             <!-- Center panel: Game Canvas -->
             <div id="center-panel">
-                <canvas id="gameCanvas" width="800" height="600"></canvas>
+                <div id="canvas-scroll-container">
+                    <canvas id="gameCanvas" width="1000" height="720"></canvas>
+                </div>
+                <div id="map-controls">
+                    <button id="view-fit-btn" class="active-view-btn" onclick="setMapViewMode('fit')">适应窗口</button>
+                    <button id="view-scroll-btn" onclick="setMapViewMode('scroll')">原始大小(可拖拽)</button>
+                    <span id="map-size-info"></span>
+                </div>
             </div>
             
             <!-- Right panel: Action buttons and Player stats -->
@@ -132,14 +139,14 @@
     <button class="feedback-btn" id="float-feedback-btn" title="支持开发者">❤️</button>
     
     <!-- 游戏脚本 -->
-    <script src="js/constants.js?v=1.2"></script>
-    <script src="js/buildings.js?v=1.2"></script>
-    <script src="js/units.js?v=1.2"></script>
-    <script src="js/utils.js?v=1.2"></script>
-    <script src="js/map.js?v=1.2"></script>
-    <script src="js/rendering.js?v=1.2"></script>
-    <script src="js/combat.js?v=1.2"></script>
-    <script src="js/ui.js?v=1.2"></script>
-    <script src="js/game.js?v=1.2"></script>
+    <script src="js/constants.js?v=2.3"></script>
+    <script src="js/buildings.js?v=2.3"></script>
+    <script src="js/units.js?v=2.3"></script>
+    <script src="js/utils.js?v=2.3"></script>
+    <script src="js/map.js?v=2.3"></script>
+    <script src="js/rendering.js?v=2.3"></script>
+    <script src="js/combat.js?v=2.3"></script>
+    <script src="js/ui.js?v=2.3"></script>
+    <script src="js/game.js?v=2.3"></script>
 </body>
 </html> 
