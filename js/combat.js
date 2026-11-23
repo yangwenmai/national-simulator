@@ -825,7 +825,11 @@ function checkGameOver() {
         addLogEntry(`游戏结束！${winner.name}获得了胜利！游戏时长：${timeStr}`);
         
         showNotification(`${winner.name}获得了胜利！`, 'success');
-        
+
+        if (gameState.campaign && campaignOnGameOver(winner)) {
+            return gameState.isGameOver;
+        }
+
         // 显示游戏结束画面
         showGameOverScreen(winner);
     }
@@ -848,6 +852,11 @@ function recruitUnit(x, y, unitType) {
     // 检查格子上是否已经有单位
     if (tile.unit) {
         showNotification('该位置已经有单位！', 'error');
+        return false;
+    }
+
+    if (gameState.campaign && !campaignRecruitAllowed(x, y)) {
+        showNotification('这一格不能招兵。', 'error');
         return false;
     }
     
@@ -999,6 +1008,7 @@ function recruitUnit(x, y, unitType) {
         hasActed: true,
         id: generateUnitId()
     };
+    campaignAfterRecruit(tile.unit);
     
     // 如果是教官单位，初始攻击力设为0
     if (unitType === 'instructor') {

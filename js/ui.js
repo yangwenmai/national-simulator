@@ -70,6 +70,11 @@ function initUI() {
     if (feedbackBtn) {
         feedbackBtn.addEventListener('click', showFeedbackForm);
     }
+
+    const sandboxBtn = document.getElementById('campaign-sandbox');
+    if (sandboxBtn) {
+        sandboxBtn.addEventListener('click', showPlayerCountDialog);
+    }
     
     // 刷新游戏状态显示与按钮说明系统
     updateGameStateDisplay();
@@ -134,7 +139,10 @@ function updateGameStateDisplay() {
     
     // 更新词条选项
     updateEnchantmentOptions();
-    
+
+    if (typeof campaignResolve === 'function') campaignResolve();
+    if (typeof campaignTouch === 'function') campaignTouch();
+
     // 设置定时更新计时器显示
     if (!gameState.isGameOver && !gameState._timerInterval) {
         gameState._timerInterval = setInterval(() => {
@@ -289,8 +297,12 @@ function updatePlayerStats() {
         playerResources.appendChild(incomeResource);
         
         // 组装卡片
+        if (gameState.campaign && i === 0) {
+            goldValue.id = 'campaign-gold';
+        }
+
         playerCard.appendChild(playerName);
-        playerCard.appendChild(playerTimeInfo);
+        if (!gameState.campaign) playerCard.appendChild(playerTimeInfo);
         playerCard.appendChild(playerResources);
         
         // 添加到状态容器
@@ -1115,6 +1127,8 @@ function updateBuildingOptions() {
             
             // 跳过标记为不能直接建造的建筑
             if (building.cannotBuildDirectly) continue;
+
+            if (!campaignAllowsBuilding(buildingType)) continue;
             
             // 创建建筑按钮
             const buildingBtn = document.createElement('button');
@@ -1184,7 +1198,9 @@ function updateBuildingOptions() {
             
             buildingsContainer.appendChild(buildingBtn);
         }
-        
+
+        if (!buildingsContainer.childElementCount) continue;
+
         categoryContainer.appendChild(buildingsContainer);
         buildingsPanel.appendChild(categoryContainer);
     }
@@ -1262,6 +1278,8 @@ function updateMilitaryOptions() {
         for (const [unitType, unit] of categoryUnits) {
             // 跳过不可招募的单位（如海盗）
             if (unit.cannotRecruit) continue;
+
+            if (!campaignAllowsUnit(unitType)) continue;
             
             // 创建单位按钮
             const unitBtn = document.createElement('button');
@@ -1409,7 +1427,9 @@ function updateMilitaryOptions() {
             
             unitsContainer.appendChild(unitBtn);
         }
-        
+
+        if (!unitsContainer.childElementCount) continue;
+
         categoryContainer.appendChild(unitsContainer);
         militaryPanel.appendChild(categoryContainer);
     }
@@ -2094,15 +2114,17 @@ function endTurn() {
     // 防止AI回合时人类手动结束回合
     const curPlayer = gameState.players[gameState.currentPlayerIndex];
     if (curPlayer && curPlayer.isAI && gameState.aiExecuting) return;
-    
+    if (gameState.campaign && gameState.campaign.presented) return;
+
     resetGameModes();
     processEndOfTurn();
+    if (gameState.campaign) campaignRunScriptedTurns();
     updateGameStateDisplay();
     drawMap();
-    
-    // 如果下一个玩家是AI，自动执行AI回合
+
+    // 自由对战里，下一个玩家是电脑时自动走 AI。战役里的对面由关卡脚本走。
     const nextPlayer = gameState.players[gameState.currentPlayerIndex];
-    if (nextPlayer && nextPlayer.isAI && !nextPlayer.isDefeated && !gameState.isGameOver) {
+    if (!gameState.campaign && nextPlayer && nextPlayer.isAI && !nextPlayer.isDefeated && !gameState.isGameOver) {
         setTimeout(() => executeAITurn(), 600);
     }
 }
@@ -2406,6 +2428,8 @@ function highlightAvailableRecruitTiles() {
                     border: '2px solid #27ae60'
                 };
             } else {
+                const spot = typeof campaignSpotlight === 'function' ? campaignSpotlight() : null;
+                if (spot && (x !== spot.x || y !== spot.y)) continue;
                 if (tile.ownerId === currentPlayer.id && !tile.unit) {
                     if (tile.terrain === 'water') continue;
                     tile.highlight = {
