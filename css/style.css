@@ -562,3 +562,129 @@ button:disabled {
     border-top: 1px solid rgba(255,255,255,0.12);
     margin: 4px 0;
 }
+
+#campaign-banner {
+    width: min(960px, calc(100% - 24px));
+    margin: 12px auto 0;
+    padding: 14px 16px 10px;
+    background: #fff8e1;
+    border: 3px solid #f1c40f;
+    border-radius: 12px;
+    text-align: center;
+}
+
+#campaign-kicker {
+    font-size: 14px;
+    font-weight: 700;
+    color: #8a6d1d;
+}
+
+#campaign-aha {
+    margin: 6px 0 0;
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1.35;
+    color: #2c3e50;
+}
+
+#campaign-sandbox {
+    margin-top: 8px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #7f8c8d;
+    font-size: 13px;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+#campaign-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1100;
+}
+
+#campaign-card {
+    width: min(420px, calc(100% - 32px));
+    padding: 28px 24px;
+    background: #fff;
+    border-radius: 16px;
+    text-align: center;
+}
+
+#campaign-card h2 {
+    margin: 0 0 8px;
+    font-size: 28px;
+}
+
+#campaign-card p {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.4;
+}
+
+#campaign-card button {
+    margin-top: 18px;
+    padding: 12px 28px;
+    border: none;
+    border-radius: 10px;
+    background: #27ae60;
+    color: #fff;
+    font-size: 20px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+@keyframes campaign-pulse {
+    0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(241, 196, 15, 0.8); }
+    50% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(241, 196, 15, 0); }
+}
+
+.campaign-pulse {
+    animation: campaign-pulse 1s ease-in-out infinite;
+    outline: 3px solid #f1c40f;
+    position: relative;
+    z-index: 5;
+}
+
+body.campaign #map-controls,
+body.campaign #float-feedback-btn,
+body.campaign #bottom-panel,
+body.campaign #new-game-btn,
+body.campaign #move-btn,
+body.campaign #global-ui-help,
+body.campaign .tab[onclick*="enchantment"] {
+    display: none !important;
+}
+
+body.campaign[data-hide-build="1"] .tab[onclick*="building"] {
+    display: none !important;
+}
+
+body.campaign[data-hide-military="1"] .tab[onclick*="military"] {
+    display: none !important;
+}
+
+body.campaign[data-hide-build="1"][data-hide-military="1"] #left-panel {
+    display: none !important;
+}
+
+body.campaign #buildings-panel > h3,
+body.campaign #buildings-panel > p,
+body.campaign #military-panel > h3,
+body.campaign #military-panel > p,
+body.campaign .building-category h4,
+body.campaign .unit-category h4 {
+    display: none !important;
+}
+
+body.campaign #end-turn-btn,
+body.campaign .building-btn,
+body.campaign .military-button {
+    font-size: 18px;
+    padding: 14px 10px;
+}

@@ -116,6 +116,7 @@ function resizeCanvas() {
 
 // 绘制地图
 function drawMap() {
+    if (typeof campaignTouch === 'function') campaignTouch();
     // 清空画布
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     

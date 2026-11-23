@@ -5,16 +5,18 @@ let gameState;
 function initGame() {
     // 初始化画布
     initCanvas();
-    
-    // 开始新游戏
-    startNewGame();
-    
+
+    // 开局进引导战役。自由对战仍走 startNewGame。
+    startCampaignLevel(campaignLoadIndex());
+
     // 初始化界面事件
     initUI();
 }
 
 // 开始新游戏
 function startNewGame(playerCount = 2, aiPlayerIndices = [], mapSizeKey = null) {
+    campaignStopTimer();
+    campaignClearChrome();
     playerCount = Math.min(Math.max(playerCount, 2), 5);
     
     // 设置地图尺寸
@@ -175,8 +177,10 @@ function processEndOfTurn() {
     // 处理海盗移动和攻击（海盗会向最近首都移动，沿途攻击单位和建筑）
     processPirateAttack();
     
-    // 保存当前玩家建筑到玩家buildings列表
+    // 保存当前玩家建筑到玩家buildings列表。
+    // 建造完成时的计收入早于建筑入账。战役里补算一次，结束回合才能把新农场算进这笔金币。
     syncPlayerBuildings(currentPlayer.id);
+    if (gameState.campaign) updatePlayerIncome(currentPlayer);
     
     // 切换到下一个未被击败的玩家
     do {

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>国家对战模拟器 | National Battle Simulator</title>
     <!-- 静态资源缓存版本：全站统一为 1.x，每次发布或批量改 css/js 时此处 +0.1（如 1.5 → 1.6） -->
-    <link rel="stylesheet" href="css/style.css?v=1.5">
+    <link rel="stylesheet" href="css/style.css?v=1.6">
     <style>
         /* 反馈按钮样式 - 气泡样式 */
         .feedback-btn {
@@ -38,6 +38,12 @@
 </head>
 <body>
     <h1>国家对战模拟器 <span style="font-size: 0.8em; display: block;">National Battle Simulator</span></h1>
+
+    <div id="campaign-banner" hidden>
+        <div id="campaign-kicker"></div>
+        <p id="campaign-aha"></p>
+        <button type="button" id="campaign-sandbox">自由对战</button>
+    </div>
     
     <div id="game-container">
         <div class="turn-indicator" id="turn-display"></div>
@@ -141,14 +147,15 @@
     <button class="feedback-btn" id="float-feedback-btn" title="支持开发者">❤️</button>
     
     <!-- 游戏脚本（?v= 与上方 link 保持一致） -->
-    <script src="js/constants.js?v=1.5"></script>
-    <script src="js/buildings.js?v=1.5"></script>
-    <script src="js/units.js?v=1.5"></script>
-    <script src="js/utils.js?v=1.5"></script>
-    <script src="js/map.js?v=1.5"></script>
-    <script src="js/rendering.js?v=1.5"></script>
-    <script src="js/combat.js?v=1.5"></script>
-    <script src="js/ui.js?v=1.5"></script>
-    <script src="js/game.js?v=1.5"></script>
+    <script src="js/constants.js?v=1.6"></script>
+    <script src="js/buildings.js?v=1.6"></script>
+    <script src="js/units.js?v=1.6"></script>
+    <script src="js/utils.js?v=1.6"></script>
+    <script src="js/map.js?v=1.6"></script>
+    <script src="js/rendering.js?v=1.6"></script>
+    <script src="js/combat.js?v=1.6"></script>
+    <script src="js/ui.js?v=1.6"></script>
+    <script src="js/campaign.js?v=1.6"></script>
+    <script src="js/game.js?v=1.6"></script>
 </body>
 </html> 
